@@ -1,3 +1,4 @@
+import type { ConfidentialityDecision, ConfidentialityPolicy } from "@iom/contracts";
 import type { Database } from "@iom/database";
 import type { LeasedJob } from "@iom/database/jobs";
 import { chunkPages, type FileStorage, parseDocument } from "@iom/documents";
@@ -18,10 +19,21 @@ export function createIngestionHandler(
   database: Database,
   storage: FileStorage,
   ocrLanguages: string,
+  classify: (input: {
+    policy: ConfidentialityPolicy;
+    text: string;
+    page?: number;
+    batchNote?: string;
+    manualConfidential: boolean;
+    signal?: AbortSignal;
+  }) => Promise<ConfidentialityDecision>,
 ) {
   return async (job: LeasedJob, signal: AbortSignal): Promise<void> => {
     const { uploadedFileId } = parsePayload(job);
-    const uploaded = await database.uploadedFile.findUnique({ where: { id: uploadedFileId } });
+    const uploaded = await database.uploadedFile.findUnique({
+      where: { id: uploadedFileId },
+      include: { batch: true },
+    });
     if (!uploaded) throw new JobProcessingError("UPLOADED_FILE_NOT_FOUND", false);
     if (signal.aborted) throw new JobProcessingError("WORKER_SHUTDOWN", true);
 
@@ -49,6 +61,16 @@ export function createIngestionHandler(
         sourceHash: uploaded.sha256,
       },
     });
+    if (uploaded.batch.defaultConfidential || uploaded.batch.note) {
+      await database.iomAnnotation.create({
+        data: {
+          versionId: version.id,
+          createdById: uploaded.batch.createdById,
+          kind: uploaded.batch.defaultConfidential ? "CONFIDENTIAL" : "NOTE",
+          note: uploaded.batch.note,
+        },
+      });
+    }
     const chunks = chunkPages(parsed.pages, uploaded.sha256);
     await database.iomChunk.createMany({
       data: chunks.map((chunk) => ({
@@ -61,18 +83,85 @@ export function createIngestionHandler(
         text: chunk.text,
       })),
     });
+    await database.uploadedFile.update({
+      where: { id: uploaded.id },
+      data: {
+        stage: "CLASSIFYING",
+        progress: 55,
+        pageCount: parsed.pages.length,
+        safeError: parsed.needsReview ? "OCR confidence rendah; dokumen wajib ditinjau." : null,
+      },
+    });
+
+    const policyRecord = await database.confidentialityPolicy.findFirst({
+      where: { status: "ACTIVE" },
+      orderBy: { version: "desc" },
+    });
+    if (!policyRecord) {
+      await database.$transaction([
+        database.iomVersion.update({ where: { id: version.id }, data: { status: "IN_REVIEW" } }),
+        database.uploadedFile.update({
+          where: { id: uploaded.id },
+          data: {
+            stage: "REVIEWING",
+            progress: 70,
+            safeError: "Policy kerahasiaan aktif belum tersedia.",
+          },
+        }),
+      ]);
+      return;
+    }
+    const policy: ConfidentialityPolicy = {
+      id: policyRecord.id,
+      version: policyRecord.version,
+      name: policyRecord.name,
+      instructions: policyRecord.instructions,
+      examples: policyRecord.examples as ConfidentialityPolicy["examples"],
+      status: policyRecord.status,
+    };
+    for (const chunk of chunks) {
+      if (signal.aborted) throw new JobProcessingError("WORKER_SHUTDOWN", true);
+      const decision = await classify({
+        policy,
+        text: chunk.text,
+        page: chunk.pageStart,
+        ...(uploaded.batch.note ? { batchNote: uploaded.batch.note } : {}),
+        manualConfidential: uploaded.batch.defaultConfidential,
+        signal,
+      });
+      await database.$transaction([
+        database.confidentialityDecision.create({
+          data: {
+            chunkId: chunk.id,
+            policyId: policy.id,
+            visibility: decision.visibility,
+            confidence: decision.confidence,
+            categories: decision.categories,
+            rationale: decision.rationale,
+            sensitiveSpans: decision.sensitiveSpans,
+            conflictsWithMarker: decision.conflictsWithMarker,
+            modelId: "iom-confidentiality-classifier",
+          },
+        }),
+        database.iomChunk.update({
+          where: { id: chunk.id },
+          data: {
+            visibility: decision.visibility,
+            classificationConfidence: decision.confidence,
+            publicText: decision.visibility === "EMPLOYEE_SAFE" ? chunk.text : null,
+          },
+        }),
+      ]);
+    }
     await database.$transaction([
-      database.iomVersion.update({ where: { id: version.id }, data: { status: "IN_REVIEW" } }),
+      database.iomVersion.update({
+        where: { id: version.id },
+        data: { status: "IN_REVIEW", confidentialityPolicyId: policy.id },
+      }),
       database.uploadedFile.update({
         where: { id: uploaded.id },
-        data: {
-          stage: "CLASSIFYING",
-          progress: 55,
-          pageCount: parsed.pages.length,
-          safeError: parsed.needsReview ? "OCR confidence rendah; dokumen wajib ditinjau." : null,
-        },
+        data: { stage: "REVIEWING", progress: 75 },
       }),
     ]);
-    // AI classification and indexing handlers extend this durable pipeline in packages/agents.
   };
 }
