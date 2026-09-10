@@ -1,0 +1,38 @@
+{
+  "name": "iom-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "prepare": "husky",
+    "dev": "dotenv -e .env -- pnpm -r --parallel dev",
+    "dev:platform": "dotenv -e .env -- pnpm --filter @iom/platform dev",
+    "dev:api": "dotenv -e .env -- pnpm --filter @iom/api dev",
+    "dev:worker": "dotenv -e .env -- pnpm --filter @iom/worker dev",
+    "build": "dotenv -e .env -- pnpm -r build",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "typecheck": "dotenv -e .env -- pnpm -r typecheck",
+    "test": "dotenv -e .env -- pnpm -r test",
+    "test:e2e": "dotenv -e .env -- pnpm --filter @iom/platform test:e2e",
+    "db:generate": "dotenv -e .env -- pnpm --filter @iom/database db:generate",
+    "db:migrate": "dotenv -e .env -- pnpm --filter @iom/database db:migrate",
+    "db:seed": "dotenv -e .env -- pnpm --filter @iom/database db:seed",
+    "user:create": "dotenv -e .env -- pnpm --filter @iom/database user:create",
+    "branch:check": "node scripts/validate-branch.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@commitlint/cli": "19.8.1",
+    "@commitlint/config-conventional": "19.8.1",
+    "dotenv-cli": "11.0.0",
+    "husky": "9.1.7",
+    "lint-staged": "16.1.6",
+    "typescript": "7.0.2",
+    "vitest": "5.0.0"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,tsx,json,jsonc,css,md,yml,yaml}": "biome check --write --no-errors-on-unmatched"
+  }
+}

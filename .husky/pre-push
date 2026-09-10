@@ -1,0 +1,5 @@
+pnpm branch:check
+pnpm check
+pnpm typecheck
+pnpm test
+
