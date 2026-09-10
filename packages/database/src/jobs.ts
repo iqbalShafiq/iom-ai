@@ -10,7 +10,7 @@ export interface LeasedJob {
 }
 
 export async function enqueueJob(
-  database: Database,
+  database: Pick<Database, "backgroundJob">,
   input: {
     type: string;
     payload: Prisma.InputJsonValue;

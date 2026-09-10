@@ -1,6 +1,18 @@
+import { OpenAIClient } from "@anvia/openai";
+import {
+  classifyConfidentiality,
+  createConfidentialityClassifier,
+  createOpenAIModel,
+  createQdrantKnowledgeIndex,
+} from "@iom/agents";
 import { parseServerConfig } from "@iom/config";
 import { createDatabase } from "@iom/database";
 import { LocalFileStorage } from "@iom/documents";
+import {
+  createIndexVersionHandler,
+  createOverlapHandler,
+  createPolicyEvaluationHandler,
+} from "./ai-jobs.js";
 import { createIngestionHandler } from "./ingestion.js";
 import { WorkerRunner } from "./runner.js";
 
@@ -11,6 +23,14 @@ const openai = new OpenAIClient({ apiKey: config.OPENAI_API_KEY });
 const classifier = createConfidentialityClassifier(
   createOpenAIModel(openai, config.CLASSIFIER_MODEL_ID),
 );
+const knowledge = await createQdrantKnowledgeIndex({
+  qdrantUrl: config.QDRANT_URL,
+  ...(config.QDRANT_API_KEY ? { qdrantApiKey: config.QDRANT_API_KEY } : {}),
+  cacheDir: "./models",
+  authorizer: { authorize: async (evidence) => [...evidence] },
+});
+await knowledge.index.ensure();
+
 const handlers = new Map([
   [
     "INGEST_DOCUMENT",
@@ -28,6 +48,12 @@ const handlers = new Map([
       }),
     ),
   ],
+  ["INDEX_VERSION", createIndexVersionHandler(database, knowledge.index)],
+  ["EVALUATE_POLICY", createPolicyEvaluationHandler(database, openai, config.CLASSIFIER_MODEL_ID)],
+  [
+    "ANALYZE_OVERLAP",
+    createOverlapHandler(database, knowledge.index, openai, config.OVERLAP_MODEL_ID),
+  ],
 ]);
 const runner = new WorkerRunner({
   database,
@@ -41,11 +67,5 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 }
 
 await runner.run();
+await knowledge.close();
 await database.$disconnect();
-
-import { OpenAIClient } from "@anvia/openai";
-import {
-  classifyConfidentiality,
-  createConfidentialityClassifier,
-  createOpenAIModel,
-} from "@iom/agents";
