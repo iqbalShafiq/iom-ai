@@ -1,7 +1,14 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
   "files": {
-    "includes": ["**", "!!**/dist", "!!**/coverage", "!!**/routeTree.gen.ts", "!!pnpm-lock.yaml"]
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!**/coverage",
+      "!!**/routeTree.gen.ts",
+      "!!**/src/generated",
+      "!!pnpm-lock.yaml"
+    ]
   },
   "formatter": {
     "enabled": true,

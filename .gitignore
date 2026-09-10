@@ -13,4 +13,4 @@ test-results/
 .vscode/
 storage/
 apps/platform/src/routeTree.gen.ts
-
+packages/database/src/generated/

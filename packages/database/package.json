@@ -1,0 +1,33 @@
+{
+  "name": "@iom/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./auth": "./src/auth.ts",
+    "./jobs": "./src/jobs.ts",
+    "./iom": "./src/iom.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "user:create": "tsx src/create-user.ts"
+  },
+  "dependencies": {
+    "@iom/contracts": "workspace:*",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "argon2": "0.44.0",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.0",
+    "prisma": "7.10.0",
+    "tsx": "4.20.5"
+  }
+}

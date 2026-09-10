@@ -1,0 +1,390 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  EMPLOYEE
+  HR_ADMIN
+}
+
+enum AccessScope {
+  EMPLOYEE
+  HR
+}
+
+enum Visibility {
+  EMPLOYEE_SAFE
+  HR_ONLY
+  NEEDS_REVIEW
+}
+
+enum IomStatus {
+  DRAFT
+  PROCESSING
+  IN_REVIEW
+  READY_TO_PUBLISH
+  PUBLISHED
+  SUPERSEDED
+  ARCHIVED
+  FAILED
+}
+
+enum IomRelationType {
+  REPLACES
+  COMPLEMENTS
+  PARTIALLY_OVERRIDES
+  RELATED
+}
+
+enum UploadStage {
+  QUEUED
+  EXTRACTING
+  OCR
+  CLASSIFYING
+  REVIEWING
+  INDEXING
+  COMPLETED
+  FAILED
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+}
+
+enum PolicyStatus {
+  DRAFT
+  EVALUATING
+  ACTIVE
+  RETIRED
+}
+
+enum AnnotationKind {
+  CONFIDENTIAL
+  EMPLOYEE_SAFE
+  NOTE
+}
+
+enum OverlapRecommendation {
+  ARCHIVE_EXISTING
+  PUBLISH_AS_COMPLEMENT
+  NO_MATERIAL_OVERLAP
+  MANUAL_REVIEW
+}
+
+model User {
+  id           String         @id @default(uuid()) @db.Uuid
+  email        String         @unique
+  name         String
+  passwordHash String
+  role         Role
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  sessions     AuthSession[]
+  conversations Conversation[]
+  uploadBatches UploadBatch[]
+  annotations  IomAnnotation[]
+  auditEvents  AuditEvent[]
+}
+
+model AuthSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  tokenHash String   @unique
+  userId    String   @db.Uuid
+  expiresAt DateTime
+  lastUsedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model Conversation {
+  id                  String      @id @default(uuid()) @db.Uuid
+  ownerId             String      @db.Uuid
+  title               String      @default("Percakapan baru")
+  accessScope         AccessScope
+  modelId             String
+  reasoningEffort     String
+  corpusPolicyVersion Int
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  owner               User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  messages            ConversationMessage[]
+
+  @@index([ownerId, updatedAt])
+}
+
+model ConversationMessage {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @db.Uuid
+  role           String
+  content        Json
+  modelId        String?
+  reasoningEffort String?
+  usage          Json?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+model UploadBatch {
+  id                  String         @id @default(uuid()) @db.Uuid
+  createdById         String         @db.Uuid
+  note                String?
+  defaultConfidential Boolean        @default(false)
+  totalFiles          Int            @default(0)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  createdBy           User           @relation(fields: [createdById], references: [id])
+  files               UploadedFile[]
+
+  @@index([createdAt])
+}
+
+model UploadedFile {
+  id           String      @id @default(uuid()) @db.Uuid
+  batchId      String      @db.Uuid
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  storageKey   String
+  stage        UploadStage @default(QUEUED)
+  progress     Int         @default(0)
+  errorCode    String?
+  safeError    String?
+  pageCount    Int?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  batch        UploadBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  version      IomVersion?
+
+  @@unique([batchId, sha256])
+  @@index([sha256])
+  @@index([batchId, stage])
+}
+
+model BackgroundJob {
+  id             String    @id @default(uuid()) @db.Uuid
+  type           String
+  status         JobStatus @default(QUEUED)
+  payload        Json
+  idempotencyKey String    @unique
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  availableAt    DateTime  @default(now())
+  leaseOwner     String?
+  leaseExpiresAt DateTime?
+  heartbeatAt    DateTime?
+  lastErrorCode  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, availableAt])
+  @@index([leaseExpiresAt])
+}
+
+model IomDocument {
+  id        String       @id @default(uuid()) @db.Uuid
+  stableKey String       @unique
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  versions  IomVersion[]
+}
+
+model IomVersion {
+  id                    String       @id @default(uuid()) @db.Uuid
+  documentId            String       @db.Uuid
+  uploadedFileId        String?      @unique @db.Uuid
+  iomNumber             String
+  revision              Int
+  title                 String
+  status                IomStatus    @default(DRAFT)
+  publicationDate       DateTime?
+  effectiveFrom         DateTime
+  effectiveUntil        DateTime?
+  sourceHash            String
+  confidentialityPolicyId String?    @db.Uuid
+  reviewedById          String?      @db.Uuid
+  publishedAt           DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  document              IomDocument  @relation(fields: [documentId], references: [id])
+  uploadedFile          UploadedFile? @relation(fields: [uploadedFileId], references: [id])
+  confidentialityPolicy ConfidentialityPolicy? @relation(fields: [confidentialityPolicyId], references: [id])
+  chunks                IomChunk[]
+  annotations           IomAnnotation[]
+  outgoingRelations     IomRelation[] @relation("RelationSource")
+  incomingRelations     IomRelation[] @relation("RelationTarget")
+  overlapRuns           OverlapRun[]  @relation("OverlapCandidate")
+  overlapMatches        OverlapMatch[] @relation("OverlapExisting")
+
+  @@unique([documentId, revision])
+  @@index([status, effectiveFrom, effectiveUntil])
+  @@index([iomNumber])
+}
+
+model IomRelation {
+  id              String          @id @default(uuid()) @db.Uuid
+  sourceVersionId String          @db.Uuid
+  targetVersionId String          @db.Uuid
+  type            IomRelationType
+  topicScope      Json?
+  note            String?
+  confirmedById   String          @db.Uuid
+  createdAt       DateTime        @default(now())
+  sourceVersion   IomVersion      @relation("RelationSource", fields: [sourceVersionId], references: [id])
+  targetVersion   IomVersion      @relation("RelationTarget", fields: [targetVersionId], references: [id])
+
+  @@unique([sourceVersionId, targetVersionId, type])
+}
+
+model IomChunk {
+  id             String      @id @db.Uuid
+  versionId      String      @db.Uuid
+  ordinal        Int
+  stableKey      String
+  section        String?
+  pageStart      Int?
+  pageEnd        Int?
+  text           String
+  publicText     String?
+  visibility     Visibility  @default(NEEDS_REVIEW)
+  classificationConfidence Float?
+  vectorGeneration Int?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  version        IomVersion  @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  decisions      ConfidentialityDecision[]
+
+  @@unique([versionId, stableKey])
+  @@index([versionId, visibility])
+}
+
+model IomAnnotation {
+  id          String         @id @default(uuid()) @db.Uuid
+  versionId   String         @db.Uuid
+  createdById String         @db.Uuid
+  kind        AnnotationKind
+  pageStart   Int?
+  pageEnd     Int?
+  charStart   Int?
+  charEnd     Int?
+  section     String?
+  note        String?
+  createdAt   DateTime       @default(now())
+  version     IomVersion     @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  createdBy   User           @relation(fields: [createdById], references: [id])
+
+  @@index([versionId, pageStart])
+}
+
+model ConfidentialityPolicy {
+  id           String       @id @default(uuid()) @db.Uuid
+  version      Int          @unique
+  name         String
+  instructions String
+  examples     Json
+  status       PolicyStatus @default(DRAFT)
+  createdById  String       @db.Uuid
+  activatedAt  DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  versions     IomVersion[]
+  decisions    ConfidentialityDecision[]
+}
+
+model ConfidentialityDecision {
+  id                  String      @id @default(uuid()) @db.Uuid
+  chunkId             String      @db.Uuid
+  policyId            String      @db.Uuid
+  visibility          Visibility
+  confidence          Float
+  categories          Json
+  rationale           String
+  sensitiveSpans      Json
+  conflictsWithMarker Boolean
+  modelId             String
+  reviewedById        String?     @db.Uuid
+  reviewedAt          DateTime?
+  createdAt           DateTime    @default(now())
+  chunk               IomChunk    @relation(fields: [chunkId], references: [id], onDelete: Cascade)
+  policy              ConfidentialityPolicy @relation(fields: [policyId], references: [id])
+
+  @@index([chunkId, createdAt])
+}
+
+model OverlapRun {
+  id                 String      @id @default(uuid()) @db.Uuid
+  candidateVersionId String      @db.Uuid
+  status             String
+  modelId            String
+  errorCode          String?
+  createdAt          DateTime    @default(now())
+  completedAt        DateTime?
+  candidateVersion   IomVersion  @relation("OverlapCandidate", fields: [candidateVersionId], references: [id])
+  matches            OverlapMatch[]
+
+  @@index([candidateVersionId, createdAt])
+}
+
+model OverlapMatch {
+  id                String                @id @default(uuid()) @db.Uuid
+  runId             String                @db.Uuid
+  existingVersionId String                @db.Uuid
+  recommendation    OverlapRecommendation
+  confidence        Float
+  sharedTopics      Json
+  changedRules      Json
+  conflicts         Json
+  evidence          Json
+  createdAt         DateTime              @default(now())
+  run               OverlapRun            @relation(fields: [runId], references: [id], onDelete: Cascade)
+  existingVersion   IomVersion            @relation("OverlapExisting", fields: [existingVersionId], references: [id])
+  decision          OverlapDecision?
+
+  @@unique([runId, existingVersionId])
+}
+
+model OverlapDecision {
+  id           String       @id @default(uuid()) @db.Uuid
+  matchId      String       @unique @db.Uuid
+  decidedById  String       @db.Uuid
+  decision     String
+  note         String?
+  createdAt    DateTime     @default(now())
+  match        OverlapMatch @relation(fields: [matchId], references: [id])
+}
+
+model AuditEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  actorId         String?  @db.Uuid
+  action          String
+  entityType      String
+  entityId        String?
+  correlationId   String
+  resultStatus    String
+  modelId         String?
+  reasoningEffort String?
+  policyVersion   Int?
+  sourceIds       Json?
+  safeMetadata    Json?
+  createdAt       DateTime @default(now())
+  actor           User?    @relation(fields: [actorId], references: [id])
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+}
+
