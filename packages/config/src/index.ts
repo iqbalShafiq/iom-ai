@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-const optionalUrl = z.preprocess((value) => (value === "" ? undefined : value), z.url().optional());
+const optionalUrl = z
+  .union([z.url(), z.literal("")])
+  .transform((value) => value || undefined)
+  .optional();
 
 const serverSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),

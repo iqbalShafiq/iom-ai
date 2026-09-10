@@ -35,6 +35,11 @@ const relationSchema = z.object({
   topicScope: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
 });
 
+const policyDecisionReviewSchema = z.object({
+  visibility: z.enum(["EMPLOYEE_SAFE", "HR_ONLY"]),
+  reason: z.string().trim().min(3).max(2_000),
+});
+
 export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerConfig) {
   const storage = new LocalFileStorage(config.STORAGE_ROOT);
   app.use("/uploads/*", authMiddleware(), requireHr());
@@ -364,9 +369,15 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
   });
 
   app.get("/confidentiality/policies", async (context) => {
-    const policies = await context
-      .get("database")
-      .confidentialityPolicy.findMany({ orderBy: { version: "desc" } });
+    const policies = await context.get("database").confidentialityPolicy.findMany({
+      orderBy: { version: "desc" },
+      include: {
+        _count: { select: { decisions: true } },
+        decisions: {
+          select: { visibility: true, conflictsWithMarker: true },
+        },
+      },
+    });
     return context.json({ policies });
   });
 
@@ -401,20 +412,138 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     return context.json({ jobId: job.id }, 202);
   });
 
+  app.post("/confidentiality/policies/:policyId/decisions/:chunkId/review", async (context) => {
+    const parsed = policyDecisionReviewSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) return context.json({ error: "Keputusan review tidak valid." }, 400);
+    const database = context.get("database");
+    const actor = context.get("actor");
+    const policyId = context.req.param("policyId");
+    const chunkId = context.req.param("chunkId");
+    const [policy, chunk] = await Promise.all([
+      database.confidentialityPolicy.findFirst({
+        where: { id: policyId, status: "EVALUATING" },
+      }),
+      database.iomChunk.findUnique({ where: { id: chunkId }, select: { id: true } }),
+    ]);
+    if (!policy || !chunk)
+      return context.json({ error: "Policy atau potongan dokumen tidak ditemukan." }, 404);
+    const decision = await database.confidentialityDecision.create({
+      data: {
+        chunkId,
+        policyId,
+        visibility: parsed.data.visibility,
+        confidence: 1,
+        categories: ["HR_MANUAL_REVIEW"],
+        rationale: parsed.data.reason,
+        sensitiveSpans: [],
+        conflictsWithMarker: false,
+        modelId: "human-review",
+        reviewedById: actor.id,
+        reviewedAt: new Date(),
+      },
+    });
+    await audit(database, {
+      actorId: actor.id,
+      action: "POLICY_IMPACT_REVIEW",
+      entityType: "IomChunk",
+      entityId: chunkId,
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      policyVersion: policy.version,
+      safeMetadata: { visibility: parsed.data.visibility },
+    });
+    return context.json({ decision }, 201);
+  });
+
   app.post("/confidentiality/policies/:policyId/activate", async (context) => {
     const database = context.get("database");
     const policyId = context.req.param("policyId");
-    await database.$transaction([
-      database.confidentialityPolicy.updateMany({
+    const policy = await database.confidentialityPolicy.findFirst({
+      where: { id: policyId, status: "EVALUATING" },
+    });
+    if (!policy) return context.json({ error: "Policy belum siap diaktifkan." }, 409);
+    const chunks = await database.iomChunk.findMany({
+      where: {
+        version: { status: { in: ["IN_REVIEW", "READY_TO_PUBLISH", "PUBLISHED"] } },
+      },
+      select: {
+        id: true,
+        text: true,
+        versionId: true,
+        version: { select: { status: true, sourceHash: true } },
+        decisions: {
+          where: { policyId },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { visibility: true, conflictsWithMarker: true },
+        },
+      },
+    });
+    const unresolved = chunks.filter((chunk) => {
+      const decision = chunk.decisions[0];
+      return !decision || decision.visibility === "NEEDS_REVIEW" || decision.conflictsWithMarker;
+    });
+    if (unresolved.length > 0) {
+      return context.json(
+        {
+          error: "Impact policy belum selesai direview.",
+          unresolvedCount: unresolved.length,
+          unresolvedChunkIds: unresolved.slice(0, 50).map((chunk) => chunk.id),
+        },
+        409,
+      );
+    }
+    const publishedVersions = new Map<string, string>();
+    for (const chunk of chunks) {
+      if (chunk.version.status === "PUBLISHED")
+        publishedVersions.set(chunk.versionId, chunk.version.sourceHash);
+    }
+    await database.$transaction(async (transaction) => {
+      await transaction.confidentialityPolicy.updateMany({
         where: { status: "ACTIVE" },
         data: { status: "RETIRED" },
-      }),
-      database.confidentialityPolicy.update({
-        where: { id: policyId, status: "EVALUATING" },
+      });
+      await transaction.confidentialityPolicy.update({
+        where: { id: policyId },
         data: { status: "ACTIVE", activatedAt: new Date() },
-      }),
-    ]);
-    return context.json({ status: "ACTIVE" });
+      });
+      for (const chunk of chunks) {
+        const decision = chunk.decisions[0];
+        if (!decision) continue;
+        await transaction.iomChunk.update({
+          where: { id: chunk.id },
+          data: {
+            visibility: decision.visibility,
+            publicText: decision.visibility === "EMPLOYEE_SAFE" ? chunk.text : null,
+            vectorGeneration: null,
+          },
+        });
+      }
+      const versionIds = [...new Set(chunks.map((chunk) => chunk.versionId))];
+      if (versionIds.length > 0)
+        await transaction.iomVersion.updateMany({
+          where: { id: { in: versionIds } },
+          data: { confidentialityPolicyId: policyId },
+        });
+      for (const [versionId, sourceHash] of publishedVersions) {
+        await enqueueJob(transaction, {
+          type: "INDEX_VERSION",
+          payload: { versionId },
+          idempotencyKey: `index:${versionId}:${sourceHash}:policy-${policy.version}`,
+        });
+      }
+    });
+    await audit(database, {
+      actorId: context.get("actor").id,
+      action: "CONFIDENTIALITY_POLICY_ACTIVATE",
+      entityType: "ConfidentialityPolicy",
+      entityId: policyId,
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      policyVersion: policy.version,
+      safeMetadata: { reclassifiedChunks: chunks.length, reindexJobs: publishedVersions.size },
+    });
+    return context.json({ status: "ACTIVE", reindexJobs: publishedVersions.size });
   });
 
   app.get("/audit", requireHr(), async (context) => {
