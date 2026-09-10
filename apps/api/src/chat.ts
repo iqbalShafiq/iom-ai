@@ -194,6 +194,18 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
     return context.json({ conversation }, 201);
   });
 
+  app.get("/chat/conversations/:conversationId", async (context) => {
+    const conversation = await context.get("database").conversation.findFirst({
+      where: {
+        id: context.req.param("conversationId"),
+        ownerId: context.get("actor").id,
+      },
+      include: { messages: { orderBy: { createdAt: "desc" }, take: 1 } },
+    });
+    if (!conversation) return context.json({ error: "Percakapan tidak ditemukan." }, 404);
+    return context.json({ conversation });
+  });
+
   app.delete("/chat/conversations/:conversationId", async (context) => {
     const deleted = await context.get("database").conversation.deleteMany({
       where: { id: context.req.param("conversationId"), ownerId: context.get("actor").id },
