@@ -11,6 +11,7 @@ const config = {
   API_PORT: 3001,
   PLATFORM_ORIGIN: "http://localhost:5173",
   STORAGE_ROOT: "./storage-test",
+  MODEL_CACHE_ROOT: "./models-test",
   WORKER_CONCURRENCY: 1,
   JOB_LEASE_SECONDS: 60,
   OCR_LANGUAGES: "ind+eng",
