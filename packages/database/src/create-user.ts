@@ -1,5 +1,6 @@
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline/promises";
+import { passwordSchema } from "@iom/contracts";
 import argon2 from "argon2";
 import { createDatabase } from "./index.js";
 
@@ -13,7 +14,8 @@ try {
   const roleInput = (await terminal.question("Role (EMPLOYEE/HR_ADMIN): ")).trim().toUpperCase();
   const password = await terminal.question("Password (input visible): ");
   if (roleInput !== "EMPLOYEE" && roleInput !== "HR_ADMIN") throw new Error("Role tidak valid.");
-  if (password.length < 12) throw new Error("Password minimal 12 karakter.");
+  if (!passwordSchema.safeParse(password).success)
+    throw new Error("Password harus 8-256 karakter.");
 
   const database = createDatabase(databaseUrl);
   await database.user.create({

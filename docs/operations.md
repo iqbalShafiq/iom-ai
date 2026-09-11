@@ -19,6 +19,8 @@ pnpm dev
 API berjalan di port 3001, platform 5173, PostgreSQL 5432, dan Qdrant 6333. Jalankan API, worker,
 dan platform sebagai tiga process/service terpisah di production.
 
+`pnpm user:create` memakai kebijakan password yang sama dengan login: panjang 8–256 karakter.
+
 ## Worker recovery
 
 Job memakai lease dan heartbeat. Worker yang mati boleh langsung direstart; job `RUNNING` dengan

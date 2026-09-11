@@ -195,9 +195,11 @@ export const createPolicySchema = z.object({
   examples: z.array(policyExampleSchema).max(50).default([]),
 });
 
+export const passwordSchema = z.string().min(8).max(256);
+
 export const loginSchema = z.object({
   email: z.email().transform((value) => value.trim().toLowerCase()),
-  password: z.string().min(8).max(256),
+  password: passwordSchema,
 });
 
 export const paginationSchema = z.object({
