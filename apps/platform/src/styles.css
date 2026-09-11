@@ -15,10 +15,66 @@
   --blue: #5479a8;
   --line: 2px solid var(--ink);
   --shadow: 4px 4px 0 var(--ink);
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: var(--orange);
+  --scrollbar-thumb-hover: #f16e51;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 * {
   box-sizing: border-box;
+  scrollbar-color: auto;
+  scrollbar-width: auto;
+}
+
+html {
+  scrollbar-color: auto;
+  scrollbar-width: auto;
+}
+
+/* Chromium gives scrollbar-color precedence over the pseudo-elements below. */
+@supports not selector(::-webkit-scrollbar) {
+  html,
+  * {
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+}
+
+*::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+  background: transparent;
+  border-radius: 0;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  background: var(--scrollbar-thumb);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: var(--ink);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 html,
 body,
