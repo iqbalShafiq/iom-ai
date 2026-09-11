@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { OpenAIClient } from "@anvia/openai";
 import {
   classifyConfidentiality,
@@ -16,7 +18,13 @@ import {
 import { createIngestionHandler } from "./ingestion.js";
 import { WorkerRunner } from "./runner.js";
 
-const config = parseServerConfig(process.env);
+const parsedConfig = parseServerConfig(process.env);
+const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const config = {
+  ...parsedConfig,
+  STORAGE_ROOT: resolve(workspaceRoot, parsedConfig.STORAGE_ROOT),
+  MODEL_CACHE_ROOT: resolve(workspaceRoot, parsedConfig.MODEL_CACHE_ROOT),
+};
 const database = createDatabase(config.DATABASE_URL);
 const storage = new LocalFileStorage(config.STORAGE_ROOT);
 const openai = new OpenAIClient({
@@ -29,7 +37,7 @@ const classifier = createConfidentialityClassifier(
 const knowledge = await createQdrantKnowledgeIndex({
   qdrantUrl: config.QDRANT_URL,
   ...(config.QDRANT_API_KEY ? { qdrantApiKey: config.QDRANT_API_KEY } : {}),
-  cacheDir: "./models",
+  cacheDir: config.MODEL_CACHE_ROOT,
   authorizer: { authorize: async (evidence) => [...evidence] },
 });
 await knowledge.index.ensure();
@@ -37,18 +45,23 @@ await knowledge.index.ensure();
 const handlers = new Map([
   [
     "INGEST_DOCUMENT",
-    createIngestionHandler(database, storage, config.OCR_LANGUAGES, async (input) =>
-      classifyConfidentiality({
-        agent: classifier,
-        policy: input.policy,
-        input: {
-          text: input.text,
-          ...(input.page === undefined ? {} : { page: input.page }),
-          ...(input.batchNote === undefined ? {} : { batchNote: input.batchNote }),
-          manualMarkers: input.manualConfidential ? [{ kind: "CONFIDENTIAL" }] : [],
-        },
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
-      }),
+    createIngestionHandler(
+      database,
+      storage,
+      config.OCR_LANGUAGES,
+      config.CLASSIFIER_MODEL_ID,
+      async (input) =>
+        classifyConfidentiality({
+          agent: classifier,
+          policy: input.policy,
+          input: {
+            text: input.text,
+            ...(input.page === undefined ? {} : { page: input.page }),
+            ...(input.batchNote === undefined ? {} : { batchNote: input.batchNote }),
+            manualMarkers: input.manualConfidential ? [{ kind: "CONFIDENTIAL" }] : [],
+          },
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
+        }),
     ),
   ],
   ["INDEX_VERSION", createIndexVersionHandler(database, knowledge.index)],

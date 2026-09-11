@@ -19,6 +19,7 @@ export function createIngestionHandler(
   database: Database,
   storage: FileStorage,
   ocrLanguages: string,
+  classifierModelId: string,
   classify: (input: {
     policy: ConfidentialityPolicy;
     text: string;
@@ -48,19 +49,35 @@ export function createIngestionHandler(
     );
     if (signal.aborted) throw new JobProcessingError("WORKER_SHUTDOWN", true);
 
-    const document = await database.iomDocument.create({ data: { stableKey: uploaded.sha256 } });
-    const version = await database.iomVersion.create({
-      data: {
-        documentId: document.id,
-        uploadedFileId: uploaded.id,
-        iomNumber: uploaded.originalName.replace(/\.[^.]+$/, ""),
-        revision: 1,
-        title: uploaded.originalName.replace(/\.[^.]+$/, ""),
-        status: "PROCESSING",
-        effectiveFrom: new Date(),
-        sourceHash: uploaded.sha256,
-      },
+    const existingVersion = await database.iomVersion.findUnique({
+      where: { uploadedFileId: uploaded.id },
     });
+    const document = existingVersion
+      ? await database.iomDocument.findUniqueOrThrow({ where: { id: existingVersion.documentId } })
+      : await database.iomDocument.create({ data: { stableKey: uploaded.sha256 } });
+    const version = existingVersion
+      ? await database.$transaction(async (transaction) => {
+          // A manual retry restarts only an unpublished processing version. Stable chunk IDs and
+          // the original upload stay intact, while partial classifier writes are rebuilt cleanly.
+          await transaction.iomChunk.deleteMany({ where: { versionId: existingVersion.id } });
+          await transaction.iomAnnotation.deleteMany({ where: { versionId: existingVersion.id } });
+          return transaction.iomVersion.update({
+            where: { id: existingVersion.id },
+            data: { status: "PROCESSING", confidentialityPolicyId: null },
+          });
+        })
+      : await database.iomVersion.create({
+          data: {
+            documentId: document.id,
+            uploadedFileId: uploaded.id,
+            iomNumber: uploaded.originalName.replace(/\.[^.]+$/, ""),
+            revision: 1,
+            title: uploaded.originalName.replace(/\.[^.]+$/, ""),
+            status: "PROCESSING",
+            effectiveFrom: new Date(),
+            sourceHash: uploaded.sha256,
+          },
+        });
     if (uploaded.batch.defaultConfidential || uploaded.batch.note) {
       await database.iomAnnotation.create({
         data: {
@@ -140,7 +157,7 @@ export function createIngestionHandler(
             rationale: decision.rationale,
             sensitiveSpans: decision.sensitiveSpans,
             conflictsWithMarker: decision.conflictsWithMarker,
-            modelId: "iom-confidentiality-classifier",
+            modelId: classifierModelId,
           },
         }),
         database.iomChunk.update({

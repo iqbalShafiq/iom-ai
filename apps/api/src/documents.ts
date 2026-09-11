@@ -101,7 +101,9 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         .uploadedFile.findFirst({ where: { sha256: validated.sha256 } });
       if (duplicate) return context.json({ duplicateOf: duplicate.id, status: "DUPLICATE" }, 409);
       const storageKey = `uploads/${batch.id}/${randomUUID()}-${basename(file.name)}`;
-      await storage.put(storageKey, Readable.from(bytes));
+      // A Uint8Array is iterable, so Readable.from(bytes) emits one number per chunk.
+      // Wrap it to preserve a single binary chunk for the writable stream.
+      await storage.put(storageKey, Readable.from([Buffer.from(bytes)]));
       const uploaded = await context.get("database").$transaction(async (database) => {
         const row = await database.uploadedFile.create({
           data: {
@@ -153,13 +155,46 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         yield { type: "batch_progress", batchId, files };
         if (
           files.length > 0 &&
-          files.every((file) => file.stage === "COMPLETED" || file.stage === "FAILED")
+          files.every(
+            (file) =>
+              file.stage === "REVIEWING" || file.stage === "COMPLETED" || file.stage === "FAILED",
+          )
         )
           return;
         await new Promise((resolve) => setTimeout(resolve, 1_000));
       }
     }
     return createEventStreamResponse({ format: "sse", events: progress() });
+  });
+
+  app.post("/uploads/files/:fileId/retry", async (context) => {
+    const database = context.get("database");
+    const actor = context.get("actor");
+    const fileId = context.req.param("fileId");
+    const file = await database.uploadedFile.findFirst({
+      where: { id: fileId, batch: { createdById: actor.id }, stage: "FAILED" },
+    });
+    if (!file) return context.json({ error: "File gagal tidak ditemukan." }, 404);
+    const job = await database.$transaction(async (transaction) => {
+      await transaction.uploadedFile.update({
+        where: { id: file.id },
+        data: { stage: "QUEUED", progress: 0, errorCode: null, safeError: null },
+      });
+      return enqueueJob(transaction, {
+        type: "INGEST_DOCUMENT",
+        payload: { uploadedFileId: file.id },
+        idempotencyKey: `ingest:${file.id}:${file.sha256}:manual-${randomUUID()}`,
+      });
+    });
+    await audit(database, {
+      actorId: actor.id,
+      action: "UPLOAD_RETRY",
+      entityType: "UploadedFile",
+      entityId: file.id,
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+    });
+    return context.json({ jobId: job.id }, 202);
   });
 
   app.get("/iom", async (context) => {
@@ -412,6 +447,13 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     const database = context.get("database");
     const sourceVersionId = context.req.param("versionId");
     const actor = context.get("actor");
+    if (sourceVersionId === parsed.data.targetVersionId)
+      return context.json({ error: "Versi tidak dapat berelasi dengan dirinya sendiri." }, 400);
+    const [source, target] = await Promise.all([
+      database.iomVersion.findUnique({ where: { id: sourceVersionId } }),
+      database.iomVersion.findUnique({ where: { id: parsed.data.targetVersionId } }),
+    ]);
+    if (!source || !target) return context.json({ error: "Versi IOM tidak ditemukan." }, 404);
     const relation = await database.$transaction(async (transaction) => {
       const created = await transaction.iomRelation.create({
         data: {
@@ -423,13 +465,16 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
           ...(parsed.data.topicScope ? { topicScope: parsed.data.topicScope } : {}),
         },
       });
-      if (parsed.data.type === "REPLACES") {
-        await transaction.iomVersion.update({
-          where: { id: parsed.data.targetVersionId },
-          data: { status: "SUPERSEDED" },
-        });
-      }
       return created;
+    });
+    await audit(database, {
+      actorId: actor.id,
+      action: "IOM_RELATION_CONFIRM",
+      entityType: "IomRelation",
+      entityId: relation.id,
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      safeMetadata: { type: relation.type },
     });
     return context.json({ relation }, 201);
   });
