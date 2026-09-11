@@ -38,6 +38,7 @@ export interface IomVersionRow {
   status: string;
   effectiveFrom: string;
   effectiveUntil?: string | null;
+  document?: { id: string; stableKey: string };
   _count?: { chunks: number };
   chunks?: Array<{
     id: string;

@@ -1,5 +1,5 @@
 import { Button, EmptyState, PageHeader, StatusStamp } from "@iom/ui";
-import { ArrowsLeftRight, Play } from "@phosphor-icons/react";
+import { ArrowsLeftRight, Check, Play } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -53,6 +53,24 @@ function OverlapPage() {
       await apiFetch("/overlap/runs", {
         method: "POST",
         body: JSON.stringify({ candidateVersionId: candidate }),
+      });
+      await router.invalidate();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function recordDecision(matchId: string, decision: string) {
+    if (
+      !window.confirm(
+        "Keputusan ini dicatat sebagai keputusan HR. Perubahan status dokumen tetap dilakukan lewat halaman dokumen. Lanjutkan?",
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      await apiFetch(`/overlap/matches/${matchId}/decision`, {
+        method: "POST",
+        body: JSON.stringify({ decision }),
       });
       await router.invalidate();
     } finally {
@@ -135,6 +153,33 @@ function OverlapPage() {
                         ))}
                       </ul>
                     ) : null}
+                    <div className="overlap-actions">
+                      {match.decision ? (
+                        <StatusStamp status={`HR: ${match.decision.decision}`} />
+                      ) : (
+                        <>
+                          <small>KEPUTUSAN HR</small>
+                          <Button
+                            disabled={busy}
+                            onClick={() => recordDecision(match.id, match.recommendation)}
+                          >
+                            <Check /> Terima rekomendasi
+                          </Button>
+                          <Button
+                            disabled={busy}
+                            onClick={() => recordDecision(match.id, "MANUAL_REVIEW")}
+                          >
+                            Review manual
+                          </Button>
+                          <Button
+                            disabled={busy}
+                            onClick={() => recordDecision(match.id, "NO_MATERIAL_OVERLAP")}
+                          >
+                            Tidak overlap
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </article>
                 ))
               )}

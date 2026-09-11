@@ -1,6 +1,7 @@
 import { enqueueJob } from "@iom/database/jobs";
 import type { Hono } from "hono";
 import { z } from "zod";
+import { audit } from "./audit.js";
 import { authMiddleware, requireHr } from "./auth.js";
 import type { AppBindings } from "./types.js";
 
@@ -52,10 +53,14 @@ export function registerOverlapRoutes(app: Hono<AppBindings>, modelId: string) {
   app.post("/overlap/matches/:matchId/decision", async (context) => {
     const input = decisionSchema.safeParse(await context.req.json().catch(() => null));
     if (!input.success) return context.json({ error: "Keputusan overlap tidak valid." }, 400);
-    const decision = await context.get("database").overlapDecision.upsert({
-      where: { matchId: context.req.param("matchId") },
+    const database = context.get("database");
+    const matchId = context.req.param("matchId");
+    const match = await database.overlapMatch.findUnique({ where: { id: matchId } });
+    if (!match) return context.json({ error: "Match overlap tidak ditemukan." }, 404);
+    const decision = await database.overlapDecision.upsert({
+      where: { matchId },
       create: {
-        matchId: context.req.param("matchId"),
+        matchId,
         decidedById: context.get("actor").id,
         decision: input.data.decision,
         ...(input.data.note ? { note: input.data.note } : {}),
@@ -65,6 +70,15 @@ export function registerOverlapRoutes(app: Hono<AppBindings>, modelId: string) {
         decision: input.data.decision,
         ...(input.data.note ? { note: input.data.note } : {}),
       },
+    });
+    await audit(database, {
+      actorId: context.get("actor").id,
+      action: "OVERLAP_DECISION",
+      entityType: "OverlapMatch",
+      entityId: matchId,
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      safeMetadata: { decision: input.data.decision },
     });
     return context.json({ decision });
   });

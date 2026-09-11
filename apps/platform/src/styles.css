@@ -798,6 +798,30 @@ time,
   background: var(--paper-light);
   font-size: 0.82rem;
 }
+.metadata-editor {
+  border: var(--line);
+  background: var(--paper-light);
+  box-shadow: var(--shadow);
+}
+.metadata-editor > summary {
+  cursor: pointer;
+  padding: 0.9rem 1rem;
+  font-weight: 750;
+}
+.metadata-editor > form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  border-top: var(--line);
+}
+.metadata-editor select {
+  width: 100%;
+  min-height: 44px;
+  border: var(--line);
+  background: #fffdf7;
+  padding: 0 0.7rem;
+}
 .review-split {
   display: grid;
   grid-template-columns: minmax(360px, 0.9fr) minmax(460px, 1.1fr);
@@ -1013,6 +1037,22 @@ time,
   margin-left: auto;
   font-family: "JetBrains Mono Variable", monospace;
 }
+.overlap-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(32, 32, 30, 0.35);
+}
+.overlap-actions > small,
+.policy-impact {
+  font:
+    700 0.68rem "JetBrains Mono Variable",
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 .rule-diff {
   display: grid;
   grid-template-columns: 1.2fr 1fr 1fr auto;
@@ -1071,6 +1111,11 @@ time,
 .policy-history article footer {
   display: flex;
   justify-content: flex-end;
+}
+.policy-impact {
+  display: flex;
+  gap: 1rem;
+  color: var(--muted);
 }
 .audit-timeline {
   list-style: none;
@@ -1626,6 +1671,9 @@ time,
     gap: 0.7rem;
   }
   .rule-diff {
+    grid-template-columns: 1fr;
+  }
+  .metadata-editor > form {
     grid-template-columns: 1fr;
   }
   .comparison-heading {

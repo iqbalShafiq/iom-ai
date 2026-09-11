@@ -11,6 +11,8 @@ interface Policy {
   instructions: string;
   status: "DRAFT" | "EVALUATING" | "ACTIVE" | "RETIRED";
   createdAt: string;
+  _count?: { decisions: number };
+  decisions?: Array<{ visibility: string; conflictsWithMarker: boolean }>;
 }
 
 export const Route = createFileRoute("/_app/hr/settings")({
@@ -107,6 +109,16 @@ function SettingsPage() {
                   <StatusStamp status={policy.status} />
                 </header>
                 <p>{policy.instructions}</p>
+                <div className="policy-impact">
+                  <span>{policy._count?.decisions ?? 0} chunks dianalisis</span>
+                  <span>
+                    {policy.decisions?.filter(
+                      (decision) =>
+                        decision.visibility === "NEEDS_REVIEW" || decision.conflictsWithMarker,
+                    ).length ?? 0}{" "}
+                    masalah perlu review
+                  </span>
+                </div>
                 <footer>
                   {policy.status === "DRAFT" ? (
                     <Button disabled={busy} onClick={() => action(policy, "evaluate")}>

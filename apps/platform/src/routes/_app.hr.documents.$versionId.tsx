@@ -1,12 +1,18 @@
-import { Button, PageHeader, Panel, StatusStamp } from "@iom/ui";
+import { Button, Field, Input, PageHeader, Panel, StatusStamp } from "@iom/ui";
 import { Calendar, Check, EyeSlash, FilePdf, GitBranch, Warning } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { apiFetch, apiUrl } from "@/lib/api";
 import type { IomVersionRow } from "@/lib/types";
 
 export const Route = createFileRoute("/_app/hr/documents/$versionId")({
-  loader: ({ params }) => apiFetch<{ version: IomVersionRow }>(`/iom/${params.versionId}`),
+  loader: async ({ params }) => {
+    const [detail, list] = await Promise.all([
+      apiFetch<{ version: IomVersionRow }>(`/iom/${params.versionId}`),
+      apiFetch<{ versions: IomVersionRow[] }>("/iom"),
+    ]);
+    return { ...detail, versions: list.versions };
+  },
   component: DocumentDetail,
 });
 
@@ -66,7 +72,7 @@ function MarkedText({
 }
 
 function DocumentDetail() {
-  const { version } = Route.useLoaderData();
+  const { version, versions } = Route.useLoaderData();
   const router = useRouter();
   const [choices, setChoices] = useState<Record<string, ReviewChoice>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -106,6 +112,27 @@ function DocumentDetail() {
       setBusy(false);
     }
   }
+  async function saveMetadata(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const previousVersionId = String(form.get("previousVersionId") ?? "");
+    setBusy(true);
+    try {
+      await apiFetch(`/iom/${version.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          iomNumber: form.get("iomNumber"),
+          title: form.get("title"),
+          effectiveFrom: form.get("effectiveFrom"),
+          effectiveUntil: form.get("effectiveUntil") || null,
+          ...(previousVersionId ? { previousVersionId } : {}),
+        }),
+      });
+      await router.invalidate();
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="page-stack document-detail">
       <PageHeader
@@ -135,6 +162,52 @@ function DocumentDetail() {
           <EyeSlash /> {unresolved.length} belum diputuskan
         </span>
       </div>
+      {!["PUBLISHED", "SUPERSEDED", "ARCHIVED"].includes(version.status) ? (
+        <details className="metadata-editor">
+          <summary>Edit identitas dan versioning IOM</summary>
+          <form onSubmit={saveMetadata}>
+            <Field label="Nomor IOM">
+              <Input name="iomNumber" defaultValue={version.iomNumber} required />
+            </Field>
+            <Field label="Judul">
+              <Input name="title" defaultValue={version.title} required />
+            </Field>
+            <Field label="Berlaku sejak">
+              <Input
+                name="effectiveFrom"
+                type="date"
+                defaultValue={version.effectiveFrom.slice(0, 10)}
+                required
+              />
+            </Field>
+            <Field label="Berlaku sampai" hint="Kosongkan jika belum ada tanggal akhir.">
+              <Input
+                name="effectiveUntil"
+                type="date"
+                defaultValue={version.effectiveUntil?.slice(0, 10) ?? ""}
+              />
+            </Field>
+            <Field
+              label="Versi sebelumnya"
+              hint="Opsional. Pilih jika file ini adalah revisi dari identitas IOM yang sama."
+            >
+              <select name="previousVersionId" defaultValue="">
+                <option value="">IOM independen / belum ditentukan</option>
+                {versions
+                  .filter((candidate) => candidate.id !== version.id)
+                  .map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.iomNumber} · rev {candidate.revision} · {candidate.title}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+            <Button disabled={busy} type="submit">
+              Simpan metadata
+            </Button>
+          </form>
+        </details>
+      ) : null}
       <div className="review-split">
         <div className="document-preview">
           {version.uploadedFile?.mimeType === "application/pdf" ? (

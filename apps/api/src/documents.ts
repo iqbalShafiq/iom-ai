@@ -40,6 +40,15 @@ const policyDecisionReviewSchema = z.object({
   reason: z.string().trim().min(3).max(2_000),
 });
 
+const versionMetadataSchema = z.object({
+  iomNumber: z.string().trim().min(2).max(100),
+  title: z.string().trim().min(3).max(300),
+  publicationDate: z.coerce.date().optional(),
+  effectiveFrom: z.coerce.date(),
+  effectiveUntil: z.coerce.date().nullable().optional(),
+  previousVersionId: z.string().uuid().optional(),
+});
+
 export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerConfig) {
   const storage = new LocalFileStorage(config.STORAGE_ROOT);
   app.use("/uploads/*", authMiddleware(), requireHr());
@@ -197,6 +206,74 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         resultStatus: "SUCCESS",
       });
     }
+    return context.json({ version });
+  });
+
+  app.patch("/iom/:versionId", requireHr(), async (context) => {
+    const parsed = versionMetadataSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) return context.json({ error: "Metadata IOM tidak valid." }, 400);
+    if (
+      parsed.data.effectiveUntil &&
+      parsed.data.effectiveUntil.getTime() < parsed.data.effectiveFrom.getTime()
+    )
+      return context.json({ error: "Tanggal selesai tidak boleh sebelum tanggal berlaku." }, 400);
+    const database = context.get("database");
+    const actor = context.get("actor");
+    const versionId = context.req.param("versionId");
+    const current = await database.iomVersion.findUnique({ where: { id: versionId } });
+    if (!current) return context.json({ error: "IOM tidak ditemukan." }, 404);
+    if (["PUBLISHED", "SUPERSEDED", "ARCHIVED"].includes(current.status))
+      return context.json({ error: "Metadata versi yang sudah berlaku tidak dapat diubah." }, 409);
+    const version = await database
+      .$transaction(async (transaction) => {
+        let documentId = current.documentId;
+        let revision = current.revision;
+        if (parsed.data.previousVersionId) {
+          const previous = await transaction.iomVersion.findUnique({
+            where: { id: parsed.data.previousVersionId },
+          });
+          if (!previous || previous.id === current.id) throw new Error("INVALID_PREVIOUS_VERSION");
+          documentId = previous.documentId;
+          const highest = await transaction.iomVersion.aggregate({
+            where: { documentId },
+            _max: { revision: true },
+          });
+          revision = Math.max((highest._max.revision ?? 0) + 1, previous.revision + 1);
+        }
+        return transaction.iomVersion.update({
+          where: { id: versionId },
+          data: {
+            documentId,
+            revision,
+            iomNumber: parsed.data.iomNumber,
+            title: parsed.data.title,
+            effectiveFrom: parsed.data.effectiveFrom,
+            ...(parsed.data.publicationDate
+              ? { publicationDate: parsed.data.publicationDate }
+              : {}),
+            ...(parsed.data.effectiveUntil !== undefined
+              ? { effectiveUntil: parsed.data.effectiveUntil }
+              : {}),
+          },
+        });
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.message === "INVALID_PREVIOUS_VERSION") return null;
+        throw error;
+      });
+    if (!version) return context.json({ error: "Versi sebelumnya tidak valid." }, 400);
+    await audit(database, {
+      actorId: actor.id,
+      action: "IOM_METADATA_UPDATE",
+      entityType: "IomVersion",
+      entityId: versionId,
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      safeMetadata: {
+        revision: version.revision,
+        linkedToPrevious: !!parsed.data.previousVersionId,
+      },
+    });
     return context.json({ version });
   });
 
