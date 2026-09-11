@@ -61,6 +61,7 @@ export async function analyzeOverlap(options: {
       existingChunks: options.existingChunks,
     }),
     maxTurns: 1,
+    controls: { reasoningEffort: "high" },
     abortSignal: options.signal,
   });
   if (outcome.type !== "response") throw new Error("OVERLAP_ANALYSIS_INCOMPLETE");

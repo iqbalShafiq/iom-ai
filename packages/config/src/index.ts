@@ -16,6 +16,7 @@ const serverSchema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
   PLATFORM_ORIGIN: z.url(),
   STORAGE_ROOT: z.string().min(1).default("./storage"),
+  MODEL_CACHE_ROOT: z.string().min(1).default("./models"),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(3),
   JOB_LEASE_SECONDS: z.coerce.number().int().min(15).max(600).default(60),
   OCR_LANGUAGES: z.string().default("ind+eng"),

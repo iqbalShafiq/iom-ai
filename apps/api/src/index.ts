@@ -1,9 +1,17 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { parseServerConfig } from "@iom/config";
 import { createDatabase } from "@iom/database";
 import { createApp } from "./app.js";
 
-const config = parseServerConfig(process.env);
+const parsedConfig = parseServerConfig(process.env);
+const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const config = {
+  ...parsedConfig,
+  STORAGE_ROOT: resolve(workspaceRoot, parsedConfig.STORAGE_ROOT),
+  MODEL_CACHE_ROOT: resolve(workspaceRoot, parsedConfig.MODEL_CACHE_ROOT),
+};
 const database = createDatabase(config.DATABASE_URL);
 const app = createApp(database, config);
 

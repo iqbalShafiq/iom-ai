@@ -48,6 +48,7 @@ export async function classifyConfidentiality(options: {
   const outcome = await options.agent.generate({
     prompt: JSON.stringify({ policy: options.policy, document: options.input }),
     maxTurns: 1,
+    controls: { reasoningEffort: "high" },
     abortSignal: options.signal,
   });
   if (outcome.type !== "response") throw new Error("CONFIDENTIALITY_CLASSIFICATION_INCOMPLETE");

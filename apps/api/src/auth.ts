@@ -68,11 +68,4 @@ export function registerAuthRoutes(app: import("hono").Hono<AppBindings>, config
     const { sessionId: _, ...user } = context.get("actor");
     return context.json({ user });
   });
-
-  app.get("/auth/me", authMiddleware(), (context) => {
-    const actor = context.get("actor");
-    return context.json({
-      user: { id: actor.id, email: actor.email, name: actor.name, role: actor.role },
-    });
-  });
 }

@@ -168,9 +168,9 @@ export const overlapMatchSchema = z.object({
   changedRules: z.array(
     z.object({
       subject: z.string(),
-      previousValue: z.string().optional(),
-      proposedValue: z.string().optional(),
-      effectiveFrom: z.iso.date().optional(),
+      previousValue: z.string().nullable(),
+      proposedValue: z.string().nullable(),
+      effectiveFrom: z.iso.date().nullable(),
     }),
   ),
   conflicts: z.array(z.string()).max(20),

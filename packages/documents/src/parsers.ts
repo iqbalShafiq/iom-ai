@@ -31,7 +31,9 @@ export async function parseDocument(
 }
 
 async function parsePdf(buffer: Uint8Array, ocrLanguages: string): Promise<ParsedDocument> {
-  const document = await getDocument({ data: buffer }).promise;
+  // Node readFile returns Buffer, which is a Uint8Array subclass. pdfjs-dist rejects
+  // Buffer explicitly, so copy it into a plain Uint8Array at this trust boundary.
+  const document = await getDocument({ data: Uint8Array.from(buffer) }).promise;
   if (document.numPages > MAX_PAGES) throw new Error("PDF_PAGE_LIMIT_EXCEEDED");
   const pages: ParsedPage[] = [];
   let usedOcr = false;
