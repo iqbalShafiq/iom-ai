@@ -9,7 +9,9 @@
       "!!**/test-results",
       "!!**/routeTree.gen.ts",
       "!!**/src/generated",
-      "!!pnpm-lock.yaml"
+      "!!pnpm-lock.yaml",
+      "!!**/models",
+      "!!**/storage"
     ]
   },
   "formatter": {
