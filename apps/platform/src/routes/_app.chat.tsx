@@ -1,5 +1,5 @@
 import { Button, EmptyState, PageHeader } from "@iom/ui";
-import { ChatCircleDots, Plus } from "@phosphor-icons/react";
+import { Plus } from "@phosphor-icons/react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -12,7 +12,6 @@ export const Route = createFileRoute("/_app/chat")({
 
 function ChatLanding() {
   const { conversations } = Route.useLoaderData();
-  const { user } = Route.useRouteContext();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   async function create(scope: "EMPLOYEE" | "HR" = "EMPLOYEE") {
@@ -50,11 +49,6 @@ function ChatLanding() {
         <EmptyState
           title="Belum ada percakapan"
           description="Mulai dari pertanyaan yang benar-benar Anda perlukan."
-          action={
-            <Button onClick={() => create()}>
-              <ChatCircleDots /> Mulai bertanya
-            </Button>
-          }
         />
       ) : (
         <div className="conversation-list">
@@ -81,11 +75,6 @@ function ChatLanding() {
           ))}
         </div>
       )}
-      {user.role === "HR_ADMIN" ? (
-        <button className="text-action" type="button" onClick={() => create("HR")}>
-          Buat percakapan dengan scope HR
-        </button>
-      ) : null}
     </div>
   );
 }
