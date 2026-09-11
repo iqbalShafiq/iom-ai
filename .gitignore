@@ -12,5 +12,8 @@ test-results/
 .idea/
 .vscode/
 storage/
+models/
+tmp/
+apps/worker/*.traineddata
 apps/platform/src/routeTree.gen.ts
 packages/database/src/generated/
