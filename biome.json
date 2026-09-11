@@ -5,6 +5,8 @@
       "**",
       "!!**/dist",
       "!!**/coverage",
+      "!!**/playwright-report",
+      "!!**/test-results",
       "!!**/routeTree.gen.ts",
       "!!**/src/generated",
       "!!pnpm-lock.yaml"
@@ -22,6 +24,9 @@
       "preset": "recommended",
       "suspicious": {
         "noExplicitAny": "off"
+      },
+      "style": {
+        "noDescendingSpecificity": "off"
       }
     }
   },

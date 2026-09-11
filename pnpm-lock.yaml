@@ -276,6 +276,19 @@ importers:
         specifier: 24.3.0
         version: 24.3.0
 
+  packages/evals:
+    dependencies:
+      '@iom/agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@iom/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+    devDependencies:
+      '@types/node':
+        specifier: 24.3.0
+        version: 24.3.0
+
   packages/ui:
     dependencies:
       '@phosphor-icons/react':

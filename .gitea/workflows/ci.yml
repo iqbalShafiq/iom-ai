@@ -26,6 +26,8 @@ jobs:
       DATABASE_URL: postgresql://iom:iom@localhost:5432/iom_test
       COOKIE_SECRET: ci-cookie-secret-at-least-32-characters
       VITE_API_URL: http://localhost:3001
+      PLATFORM_ORIGIN: http://localhost:5173
+      QDRANT_URL: http://localhost:6333
       OPENAI_API_KEY: test-only
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +41,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm branch:check
       - run: pnpm db:generate
+      - run: pnpm db:deploy
       - run: pnpm check
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

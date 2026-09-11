@@ -1,7 +1,15 @@
-# IOM HR Regulation Assistant
+# Ruang IOM — HR Regulation Assistant
 
-Monorepo TypeScript untuk ingestion, review kerahasiaan, versioning, overlap analysis, dan
-chat regulasi IOM berbasis bukti.
+Monorepo TypeScript untuk batch ingestion, review kerahasiaan berbantuan AI, versioning temporal,
+hybrid overlap analysis, dan chat IOM berbasis evidence yang terotorisasi.
+
+## Aplikasi
+
+- `apps/platform`: React, Vite, TanStack Router, Anvia headless chat UI.
+- `apps/api`: Hono, database sessions, RBAC, JSONL Client Protocol v3, SSE progress.
+- `apps/worker`: OCR, klasifikasi, indexing, policy impact, dan overlap jobs.
+- `packages/agents`: scoped Anvia agents/tools tanpa akses langsung ke Prisma atau environment.
+- `packages/database`, `documents`, `contracts`, `config`, `ui`, `evals`: shared capabilities.
 
 ## Mulai lokal
 
@@ -11,6 +19,16 @@ chat regulasi IOM berbasis bukti.
 4. Jalankan `pnpm db:migrate`, lalu buat akun pertama dengan `pnpm user:create`.
 5. Jalankan seluruh aplikasi dengan `pnpm dev`.
 
-Seluruh root command memuat konfigurasi melalui `dotenv-cli`. Lihat dokumentasi operasi di
-`docs/` setelah setiap milestone implementasi.
+Tidak ada password default. Seluruh root command memuat konfigurasi melalui `dotenv-cli`.
 
+## Quality gates
+
+```text
+pnpm check
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm test:e2e
+```
+
+Arsitektur, model keamanan, dan prosedur operasi berada di `docs/`.

@@ -18,6 +18,7 @@
     "test:e2e": "dotenv -e .env -- pnpm --filter @iom/platform test:e2e",
     "db:generate": "dotenv -e .env -- pnpm --filter @iom/database db:generate",
     "db:migrate": "dotenv -e .env -- pnpm --filter @iom/database db:migrate",
+    "db:deploy": "dotenv -e .env -- pnpm --filter @iom/database db:deploy",
     "db:seed": "dotenv -e .env -- pnpm --filter @iom/database db:seed",
     "user:create": "dotenv -e .env -- pnpm --filter @iom/database user:create",
     "branch:check": "node scripts/validate-branch.mjs"
