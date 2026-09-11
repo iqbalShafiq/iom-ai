@@ -13,4 +13,20 @@ describe("document chunking", () => {
   it("normalizes unicode compatibility characters", () => {
     expect(normalizeText("ＡＢＣ")).toBe("ABC");
   });
+
+  it("starts a new chunk at a heading after substantive content", () => {
+    const chunks = chunkPages(
+      [
+        {
+          page: 1,
+          text: `${"Aturan umum untuk seluruh karyawan. ".repeat(8)}\n\nLampiran terbatas untuk HR\n\nAnggaran internal hanya untuk HR.`,
+        },
+      ],
+      "source",
+    );
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]?.text).not.toContain("Lampiran terbatas");
+    expect(chunks[1]?.text).toContain("Lampiran terbatas untuk HR");
+  });
 });

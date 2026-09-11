@@ -49,23 +49,8 @@ export function chunkPages(
       .split(/\n\s*\n/)
       .filter(Boolean);
     let buffer = "";
-    for (const paragraph of paragraphs) {
-      if (buffer && buffer.length + paragraph.length + 2 > maxCharacters) {
-        const stableKey = `${sourceHash}:p${page.page}:c${ordinal}:${createHash("sha1").update(buffer).digest("hex")}`;
-        chunks.push({
-          id: stableUuid(stableKey),
-          stableKey,
-          ordinal,
-          pageStart: page.page,
-          pageEnd: page.page,
-          text: buffer,
-        });
-        ordinal += 1;
-        buffer = "";
-      }
-      buffer = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
-    }
-    if (buffer) {
+    const flush = () => {
+      if (!buffer) return;
       const stableKey = `${sourceHash}:p${page.page}:c${ordinal}:${createHash("sha1").update(buffer).digest("hex")}`;
       chunks.push({
         id: stableUuid(stableKey),
@@ -76,7 +61,19 @@ export function chunkPages(
         text: buffer,
       });
       ordinal += 1;
+      buffer = "";
+    };
+    for (const paragraph of paragraphs) {
+      const looksLikeHeading = paragraph.length <= 120 && !/[.!?;:]$/.test(paragraph);
+      if (
+        buffer &&
+        (buffer.length + paragraph.length + 2 > maxCharacters ||
+          (looksLikeHeading && buffer.length >= 200))
+      )
+        flush();
+      buffer = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
     }
+    flush();
   }
   return chunks;
 }
