@@ -2,7 +2,10 @@
 
 ## Bootstrap
 
-Salin `.env.example` menjadi `.env`, isi OpenAI key dan cookie secret minimal 32 karakter, lalu:
+Salin `.env.example` menjadi `.env`, isi OpenAI key dan cookie secret minimal 32 karakter. Default
+`OPENAI_BASE_URL` adalah `https://api.openai.com/v1`; operator dapat menggantinya dengan endpoint
+OpenAI-compatible yang sudah lulus smoke test streaming, tools, structured output, reasoning, error,
+timeout, dan cancellation. Setelah itu jalankan:
 
 ```text
 docker compose up -d

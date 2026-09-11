@@ -19,7 +19,10 @@ import { WorkerRunner } from "./runner.js";
 const config = parseServerConfig(process.env);
 const database = createDatabase(config.DATABASE_URL);
 const storage = new LocalFileStorage(config.STORAGE_ROOT);
-const openai = new OpenAIClient({ apiKey: config.OPENAI_API_KEY });
+const openai = new OpenAIClient({
+  apiKey: config.OPENAI_API_KEY,
+  baseUrl: config.OPENAI_BASE_URL,
+});
 const classifier = createConfidentialityClassifier(
   createOpenAIModel(openai, config.CLASSIFIER_MODEL_ID),
 );

@@ -80,6 +80,13 @@ pnpm build
 pnpm test:e2e
 ```
 
+- **Coding agents must never open, read, print, search, parse, source, copy, summarize, or otherwise
+  inspect any `.env` or `.env.*` file, even for debugging.** This prohibition includes shell tools,
+  editor tools, scripts, logs, and indirect inspection. The only exception is `.env.example`, which
+  is intentionally public and contains placeholders/defaults only.
+- Do not modify a real `.env` file. When configuration is missing, describe the required key and ask
+  the human operator to set it. Commands may consume already-provided process environment values,
+  but agents must never echo or enumerate them.
 - Never commit `.env`, credentials, confidential IOM content, generated storage, or test secrets.
 - `.env.example` contains placeholders only.
 - Server startup must fail fast for invalid required configuration.
@@ -235,4 +242,3 @@ type(scope): imperative summary
 - Operations and recovery: `docs/operations.md`
 - Security and release evaluation: `docs/security-and-evals.md`
 - Visual and interaction system: `DESIGN.md`
-

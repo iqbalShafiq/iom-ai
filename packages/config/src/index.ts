@@ -11,6 +11,7 @@ const serverSchema = z.object({
   QDRANT_URL: z.url(),
   QDRANT_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().min(1),
+  OPENAI_BASE_URL: z.url().default("https://api.openai.com/v1"),
   COOKIE_SECRET: z.string().min(32),
   API_PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
   PLATFORM_ORIGIN: z.url(),

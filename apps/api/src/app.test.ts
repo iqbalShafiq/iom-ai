@@ -6,6 +6,7 @@ const config = {
   DATABASE_URL: "postgresql://iom:iom@localhost:5432/iom_test",
   QDRANT_URL: "http://localhost:6333",
   OPENAI_API_KEY: "test",
+  OPENAI_BASE_URL: "https://api.openai.com/v1",
   COOKIE_SECRET: "test-cookie-secret-at-least-32-characters",
   API_PORT: 3001,
   PLATFORM_ORIGIN: "http://localhost:5173",

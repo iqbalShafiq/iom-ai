@@ -10,6 +10,17 @@ const required = {
 };
 
 describe("server configuration", () => {
+  it("uses the official OpenAI v1 API endpoint by default", () => {
+    expect(parseServerConfig(required).OPENAI_BASE_URL).toBe("https://api.openai.com/v1");
+  });
+
+  it("accepts an application-owned compatible endpoint", () => {
+    expect(
+      parseServerConfig({ ...required, OPENAI_BASE_URL: "https://gateway.internal.example/v1" })
+        .OPENAI_BASE_URL,
+    ).toBe("https://gateway.internal.example/v1");
+  });
+
   it("accepts an omitted optional Lens URL", () => {
     expect(parseServerConfig(required).ANVIA_LENS_URL).toBeUndefined();
   });

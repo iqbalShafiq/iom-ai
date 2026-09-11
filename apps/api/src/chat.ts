@@ -134,7 +134,10 @@ async function* withGuardStatus(
 }
 
 export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig) {
-  const openai = new OpenAIClient({ apiKey: config.OPENAI_API_KEY });
+  const openai = new OpenAIClient({
+    apiKey: config.OPENAI_API_KEY,
+    baseUrl: config.OPENAI_BASE_URL,
+  });
   let knowledgePromise:
     | Promise<{ index: RoleScopedKnowledgeIndex; close: () => Promise<void> }>
     | undefined;
