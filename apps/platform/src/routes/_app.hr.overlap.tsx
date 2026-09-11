@@ -1,7 +1,7 @@
-import { Button, EmptyState, PageHeader, StatusStamp } from "@iom/ui";
+import { Button, ConfirmDialog, EmptyState, PageHeader, StatusStamp } from "@iom/ui";
 import { ArrowsLeftRight, Check, Play } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { IomVersionRow } from "@/lib/types";
 
@@ -17,9 +17,9 @@ interface OverlapRun {
     sharedTopics: string[];
     changedRules: Array<{
       subject: string;
-      previousValue?: string;
-      proposedValue?: string;
-      effectiveFrom?: string;
+      previousValue: string | null;
+      proposedValue: string | null;
+      effectiveFrom: string | null;
     }>;
     conflicts: string[];
     existingVersion: IomVersionRow;
@@ -46,6 +46,15 @@ function OverlapPage() {
       ?.id ?? "",
   );
   const [busy, setBusy] = useState(false);
+  const [pendingDecision, setPendingDecision] = useState<{
+    matchId: string;
+    decision: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!overlap.runs.some((run) => run.status === "QUEUED" || run.status === "RUNNING")) return;
+    const timer = window.setInterval(() => void router.invalidate(), 2_000);
+    return () => window.clearInterval(timer);
+  }, [overlap.runs, router]);
   async function run() {
     if (!candidate) return;
     setBusy(true);
@@ -60,18 +69,13 @@ function OverlapPage() {
     }
   }
   async function recordDecision(matchId: string, decision: string) {
-    if (
-      !window.confirm(
-        "Keputusan ini dicatat sebagai keputusan HR. Perubahan status dokumen tetap dilakukan lewat halaman dokumen. Lanjutkan?",
-      )
-    )
-      return;
     setBusy(true);
     try {
       await apiFetch(`/overlap/matches/${matchId}/decision`, {
         method: "POST",
         body: JSON.stringify({ decision }),
       });
+      setPendingDecision(null);
       await router.invalidate();
     } finally {
       setBusy(false);
@@ -161,19 +165,31 @@ function OverlapPage() {
                           <small>KEPUTUSAN HR</small>
                           <Button
                             disabled={busy}
-                            onClick={() => recordDecision(match.id, match.recommendation)}
+                            onClick={() =>
+                              setPendingDecision({
+                                matchId: match.id,
+                                decision: match.recommendation,
+                              })
+                            }
                           >
                             <Check /> Terima rekomendasi
                           </Button>
                           <Button
                             disabled={busy}
-                            onClick={() => recordDecision(match.id, "MANUAL_REVIEW")}
+                            onClick={() =>
+                              setPendingDecision({ matchId: match.id, decision: "MANUAL_REVIEW" })
+                            }
                           >
                             Review manual
                           </Button>
                           <Button
                             disabled={busy}
-                            onClick={() => recordDecision(match.id, "NO_MATERIAL_OVERLAP")}
+                            onClick={() =>
+                              setPendingDecision({
+                                matchId: match.id,
+                                decision: "NO_MATERIAL_OVERLAP",
+                              })
+                            }
                           >
                             Tidak overlap
                           </Button>
@@ -187,6 +203,18 @@ function OverlapPage() {
           ))}
         </div>
       )}
+      <ConfirmDialog
+        open={pendingDecision !== null}
+        title="Catat keputusan HR?"
+        description="Keputusan akan masuk ke audit log. Relasi dan lifecycle dokumen tetap dikonfirmasi terpisah."
+        confirmLabel="Catat keputusan"
+        busy={busy}
+        onCancel={() => setPendingDecision(null)}
+        onConfirm={() => {
+          if (pendingDecision)
+            void recordDecision(pendingDecision.matchId, pendingDecision.decision);
+        }}
+      />
     </div>
   );
 }

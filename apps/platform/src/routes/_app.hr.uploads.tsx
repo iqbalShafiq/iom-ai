@@ -1,6 +1,6 @@
 import { Button, Field, PageHeader, ProgressBar, StatusStamp, Textarea } from "@iom/ui";
 import { FileArrowUp, Files, Warning } from "@phosphor-icons/react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { type DragEvent, type FormEvent, useRef, useState } from "react";
 import { useUploadManager } from "@/features/upload-manager";
 import { apiFetch } from "@/lib/api";
@@ -14,10 +14,24 @@ export const Route = createFileRoute("/_app/hr/uploads")({
 function UploadsPage() {
   const { batches } = Route.useLoaderData();
   const manager = useUploadManager();
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [retrying, setRetrying] = useState<string | null>(null);
+  async function retry(fileId: string) {
+    setRetrying(fileId);
+    setError("");
+    try {
+      await apiFetch(`/uploads/files/${fileId}/retry`, { method: "POST" });
+      await router.invalidate();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Retry gagal dijadwalkan.");
+    } finally {
+      setRetrying(null);
+    }
+  }
   function addFiles(list: FileList | null) {
     if (!list) return;
     setFiles((current) => [...current, ...Array.from(list)].slice(0, 500));
@@ -146,6 +160,15 @@ function UploadsPage() {
                   <strong>{file.originalName}</strong>
                   <ProgressBar value={file.progress} />
                   <StatusStamp status={file.stage} />
+                  {file.stage === "FAILED" ? (
+                    <Button
+                      type="button"
+                      disabled={retrying === file.id}
+                      onClick={() => retry(file.id)}
+                    >
+                      {retrying === file.id ? "Menjadwalkan..." : "Coba lagi"}
+                    </Button>
+                  ) : null}
                 </div>
               ))}
             </details>

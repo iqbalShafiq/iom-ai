@@ -1,6 +1,6 @@
 import { Button, EmptyState, PageHeader, StatusStamp } from "@iom/ui";
 import { FileText, UploadSimple } from "@phosphor-icons/react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { apiFetch } from "@/lib/api";
 import type { IomVersionRow } from "@/lib/types";
 
@@ -10,7 +10,9 @@ export const Route = createFileRoute("/_app/hr/documents")({
 });
 
 function DocumentsPage() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { versions } = Route.useLoaderData();
+  if (pathname !== "/hr/documents") return <Outlet />;
   return (
     <div className="page-stack">
       <PageHeader

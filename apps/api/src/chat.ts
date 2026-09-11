@@ -145,7 +145,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
     knowledgePromise ??= createQdrantKnowledgeIndex({
       qdrantUrl: config.QDRANT_URL,
       ...(config.QDRANT_API_KEY ? { qdrantApiKey: config.QDRANT_API_KEY } : {}),
-      cacheDir: "./models",
+      cacheDir: config.MODEL_CACHE_ROOT,
       authorizer: new PrismaEvidenceAuthorizer(database),
     }).then(async (service) => {
       await service.index.ensure();

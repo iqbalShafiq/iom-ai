@@ -1,5 +1,5 @@
 import { Button, EmptyState, Field, Input, PageHeader, StatusStamp, Textarea } from "@iom/ui";
-import { Flask, Gear, Lightning } from "@phosphor-icons/react";
+import { Flask, Gear, Lightning, Warning } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -24,10 +24,13 @@ function SettingsPage() {
   const { policies } = Route.useLoaderData();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     setBusy(true);
-    const form = new FormData(event.currentTarget);
+    setError("");
+    const form = new FormData(formElement);
     try {
       await apiFetch("/confidentiality/policies", {
         method: "POST",
@@ -37,8 +40,10 @@ function SettingsPage() {
           examples: [],
         }),
       });
-      event.currentTarget.reset();
+      formElement.reset();
       await router.invalidate();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Policy gagal disimpan.");
     } finally {
       setBusy(false);
     }
@@ -86,6 +91,11 @@ function SettingsPage() {
           <Button disabled={busy} type="submit">
             <Gear /> Simpan draft
           </Button>
+          {error ? (
+            <div className="form-alert" role="alert">
+              <Warning /> {error}
+            </div>
+          ) : null}
         </form>
         <section className="policy-history">
           <div className="section-heading">

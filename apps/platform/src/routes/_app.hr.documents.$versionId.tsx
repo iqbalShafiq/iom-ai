@@ -1,4 +1,4 @@
-import { Button, Field, Input, PageHeader, Panel, StatusStamp } from "@iom/ui";
+import { Button, ConfirmDialog, Field, Input, PageHeader, Panel, StatusStamp } from "@iom/ui";
 import { Calendar, Check, EyeSlash, FilePdf, GitBranch, Warning } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { type FormEvent, useMemo, useState } from "react";
@@ -77,6 +77,10 @@ function DocumentDetail() {
   const [choices, setChoices] = useState<Record<string, ReviewChoice>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [publishOpen, setPublishOpen] = useState(false);
+  const [relationTarget, setRelationTarget] = useState("");
+  const [relationType, setRelationType] = useState("REPLACES");
   const unresolved = version.chunks?.filter((chunk) => chunk.visibility === "NEEDS_REVIEW") ?? [];
   async function saveReview() {
     const decisions = Object.entries(choices).map(([chunkId, visibility]) => ({
@@ -86,6 +90,7 @@ function DocumentDetail() {
     }));
     if (!decisions.length) return;
     setBusy(true);
+    setError("");
     try {
       await apiFetch(`/iom/${version.id}/review`, {
         method: "POST",
@@ -93,20 +98,26 @@ function DocumentDetail() {
       });
       await router.invalidate();
       setChoices({});
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Keputusan review gagal disimpan.");
     } finally {
       setBusy(false);
     }
   }
+  function confirmAiDecisions() {
+    setChoices(
+      Object.fromEntries(
+        (version.chunks ?? [])
+          .filter((chunk) => chunk.visibility === "EMPLOYEE_SAFE" || chunk.visibility === "HR_ONLY")
+          .map((chunk) => [chunk.id, chunk.visibility as ReviewChoice]),
+      ),
+    );
+  }
   async function publish() {
-    if (
-      !window.confirm(
-        "Publish akan membuat bagian employee-safe tersedia untuk retrieval. Lanjutkan?",
-      )
-    )
-      return;
     setBusy(true);
     try {
       await apiFetch(`/iom/${version.id}/publish`, { method: "POST" });
+      setPublishOpen(false);
       await router.invalidate();
     } finally {
       setBusy(false);
@@ -133,6 +144,23 @@ function DocumentDetail() {
       setBusy(false);
     }
   }
+  async function saveRelation() {
+    if (!relationTarget) return;
+    setBusy(true);
+    setError("");
+    try {
+      await apiFetch(`/iom/${version.id}/relations`, {
+        method: "POST",
+        body: JSON.stringify({ targetVersionId: relationTarget, type: relationType }),
+      });
+      setRelationTarget("");
+      await router.invalidate();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Relasi IOM gagal disimpan.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="page-stack document-detail">
       <PageHeader
@@ -143,7 +171,7 @@ function DocumentDetail() {
           <div className="header-action-group">
             <StatusStamp status={version.status} />
             {version.status === "READY_TO_PUBLISH" ? (
-              <Button disabled={busy} onClick={publish}>
+              <Button disabled={busy} onClick={() => setPublishOpen(true)}>
                 <Check /> Publish
               </Button>
             ) : null}
@@ -225,6 +253,18 @@ function DocumentDetail() {
             <span>AI + HR REVIEW</span>
             <strong>{version.chunks?.length ?? 0} chunks</strong>
           </div>
+          {version.status === "IN_REVIEW" && unresolved.length === 0 ? (
+            <div className="ai-rationale">
+              <strong>Persetujuan HR diperlukan</strong>
+              <p>
+                AI telah memberi klasifikasi pada semua chunk. Konfirmasikan hasilnya sebelum IOM
+                dapat dipublish.
+              </p>
+              <Button disabled={busy} onClick={confirmAiDecisions}>
+                Konfirmasi semua keputusan AI
+              </Button>
+            </div>
+          ) : null}
           {version.chunks?.map((chunk) => {
             const decision = chunk.decisions[0];
             const selected =
@@ -298,6 +338,11 @@ function DocumentDetail() {
           </Button>
         </div>
       ) : null}
+      {error ? (
+        <div className="form-alert" role="alert">
+          <Warning /> {error}
+        </div>
+      ) : null}
       <Panel className="version-timeline">
         <span className="section-index">VERSION RELATIONSHIPS</span>
         <h2>Jejak aturan</h2>
@@ -319,7 +364,47 @@ function DocumentDetail() {
             </span>
           ))}
         </div>
+        {!version.outgoingRelations?.length ? (
+          <div className="inline-control">
+            <select
+              aria-label="IOM terdampak"
+              value={relationTarget}
+              onChange={(event) => setRelationTarget(event.target.value)}
+            >
+              <option value="">Pilih IOM terdampak</option>
+              {versions
+                .filter((candidate) => candidate.id !== version.id)
+                .map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.iomNumber} — {candidate.title}
+                  </option>
+                ))}
+            </select>
+            <select
+              aria-label="Jenis relasi"
+              value={relationType}
+              onChange={(event) => setRelationType(event.target.value)}
+            >
+              <option value="REPLACES">Menggantikan</option>
+              <option value="COMPLEMENTS">Melengkapi</option>
+              <option value="PARTIALLY_OVERRIDES">Mengubah sebagian</option>
+              <option value="RELATED">Terkait</option>
+            </select>
+            <Button disabled={busy || !relationTarget} type="button" onClick={saveRelation}>
+              Konfirmasi relasi
+            </Button>
+          </div>
+        ) : null}
       </Panel>
+      <ConfirmDialog
+        open={publishOpen}
+        title="Publish IOM ini?"
+        description="Bagian employee-safe akan masuk ke retrieval karyawan. Bagian HR-only tetap hanya tersedia bagi HR."
+        confirmLabel="Ya, publish"
+        busy={busy}
+        onCancel={() => setPublishOpen(false)}
+        onConfirm={publish}
+      />
     </div>
   );
 }

@@ -4,9 +4,11 @@ import type {
   ButtonHTMLAttributes,
   HTMLAttributes,
   InputHTMLAttributes,
+  ReactElement,
   ReactNode,
   TextareaHTMLAttributes,
 } from "react";
+import { cloneElement, isValidElement, useId } from "react";
 
 export function Button({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return <button className={clsx("ui-button", className)} {...props} />;
@@ -30,13 +32,32 @@ export function Field(props: {
   error?: string;
   children: ReactNode;
 }) {
+  const generatedId = useId();
+  const messageId = `${generatedId}-message`;
+  const childId = isValidElement<{ id?: string }>(props.children)
+    ? (props.children.props.id ?? generatedId)
+    : generatedId;
+  const child = isValidElement<{ id?: string; "aria-describedby"?: string }>(props.children)
+    ? cloneElement(props.children as ReactElement<{ id?: string; "aria-describedby"?: string }>, {
+        id: childId,
+        ...(props.error || props.hint ? { "aria-describedby": messageId } : {}),
+      })
+    : props.children;
   return (
-    <fieldset className="ui-field">
-      <legend className="ui-field__label">{props.label}</legend>
-      {props.children}
-      {props.error ? <span className="ui-field__error">{props.error}</span> : null}
-      {!props.error && props.hint ? <span className="ui-field__hint">{props.hint}</span> : null}
-    </fieldset>
+    <label className="ui-field" htmlFor={childId}>
+      <span className="ui-field__label">{props.label}</span>
+      {child}
+      {props.error ? (
+        <span className="ui-field__error" id={messageId}>
+          {props.error}
+        </span>
+      ) : null}
+      {!props.error && props.hint ? (
+        <span className="ui-field__hint" id={messageId}>
+          {props.hint}
+        </span>
+      ) : null}
+    </label>
   );
 }
 
@@ -78,6 +99,32 @@ export function ProgressBar({ value, label }: { value: number; label?: string })
 
 export function Panel({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return <section className={clsx("ui-panel", className)} {...props} />;
+}
+
+export function ConfirmDialog(props: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel: string;
+  busy?: boolean;
+  onCancel(): void;
+  onConfirm(): void;
+}) {
+  if (!props.open) return null;
+  return (
+    <dialog aria-labelledby="confirm-dialog-title" className="ui-panel" open>
+      <h2 id="confirm-dialog-title">{props.title}</h2>
+      <p>{props.description}</p>
+      <div className="header-action-group">
+        <Button disabled={props.busy} type="button" onClick={props.onCancel}>
+          Batal
+        </Button>
+        <Button disabled={props.busy} type="button" onClick={props.onConfirm}>
+          {props.busy ? "Memproses..." : props.confirmLabel}
+        </Button>
+      </div>
+    </dialog>
+  );
 }
 
 export function EmptyState(props: { title: string; description: string; action?: ReactNode }) {

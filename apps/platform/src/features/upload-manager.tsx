@@ -3,9 +3,11 @@ import { apiFetch, apiUrl } from "@/lib/api";
 
 export interface ClientUpload {
   key: string;
+  batchId: string;
+  fileId?: string;
   name: string;
   progress: number;
-  status: "queued" | "uploading" | "processing" | "failed";
+  status: "queued" | "uploading" | "processing" | "reviewing" | "completed" | "failed";
   error?: string;
 }
 
@@ -26,9 +28,10 @@ function sendFile(batchId: string, file: File, update: (patch: Partial<ClientUpl
         update({ progress: Math.round((event.loaded / event.total) * 70), status: "uploading" });
     });
     request.addEventListener("load", () => {
-      if (request.status >= 200 && request.status < 300)
-        update({ progress: 75, status: "processing" });
-      else
+      if (request.status >= 200 && request.status < 300) {
+        const response = JSON.parse(request.responseText) as { file: { id: string } };
+        update({ fileId: response.file.id, progress: 75, status: "processing" });
+      } else
         update({
           status: "failed",
           error: request.status === 409 ? "File duplikat." : "Upload gagal.",
@@ -54,6 +57,7 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
     });
     const entries = files.map((file) => ({
       key: `${batch.id}:${file.name}:${file.lastModified}`,
+      batchId: batch.id,
       name: file.name,
       progress: 0,
       status: "queued" as const,
@@ -74,6 +78,44 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
       }
     }
     await Promise.all(Array.from({ length: Math.min(3, files.length) }, () => worker()));
+    const stream = new EventSource(apiUrl(`/uploads/batches/${batch.id}/events`), {
+      withCredentials: true,
+    });
+    stream.addEventListener("message", (event) => {
+      const update = JSON.parse(event.data) as {
+        type: string;
+        files: Array<{ id: string; stage: string; progress: number; safeError?: string | null }>;
+      };
+      if (update.type !== "batch_progress") return;
+      setUploads((current) =>
+        current.map((item) => {
+          if (item.batchId !== batch.id || !item.fileId) return item;
+          const serverFile = update.files.find((file) => file.id === item.fileId);
+          if (!serverFile) return item;
+          return {
+            ...item,
+            progress: serverFile.progress,
+            status:
+              serverFile.stage === "COMPLETED"
+                ? "completed"
+                : serverFile.stage === "FAILED"
+                  ? "failed"
+                  : serverFile.stage === "REVIEWING"
+                    ? "reviewing"
+                    : "processing",
+            ...(serverFile.safeError ? { error: serverFile.safeError } : {}),
+          };
+        }),
+      );
+      if (
+        update.files.length > 0 &&
+        update.files.every(
+          (file) =>
+            file.stage === "REVIEWING" || file.stage === "COMPLETED" || file.stage === "FAILED",
+        )
+      )
+        stream.close();
+    });
     return batch.id;
   }, []);
   const value = useMemo(() => ({ uploads, upload }), [uploads, upload]);

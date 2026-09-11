@@ -88,14 +88,27 @@ export function ChatView(props: {
   const [modelId, setModelId] = useState(props.conversation.modelId);
   const [effort, setEffort] = useState(props.conversation.reasoningEffort);
   const model = props.models.find((item) => item.id === modelId) ?? props.models[0];
+  const metadata = useMemo(
+    () => ({
+      conversationId: props.conversation.id,
+      accessScope: props.conversation.accessScope,
+      modelId,
+      reasoningEffort: effort,
+    }),
+    [props.conversation.id, props.conversation.accessScope, modelId, effort],
+  );
   const transport = useMemo(
     () =>
       createHttpClientTransport({
         endpoint: apiUrl("/chat/stream"),
         format: "jsonl",
         init: { credentials: "include" },
+        body: ({ request, headers }) => {
+          headers.set("content-type", "application/json");
+          return JSON.stringify({ ...request, metadata });
+        },
       }),
-    [],
+    [metadata],
   );
   const chat = useChat({
     transport,
@@ -114,13 +127,6 @@ export function ChatView(props: {
     ],
   });
   const isRunning = chat.status === "submitted" || chat.status === "streaming";
-  const metadata = {
-    conversationId: props.conversation.id,
-    accessScope: props.conversation.accessScope,
-    modelId,
-    reasoningEffort: effort,
-  };
-
   return (
     <ChatProvider controller={chat}>
       <div className="chat-layout">
@@ -236,7 +242,7 @@ export function ChatView(props: {
             submitMessage={async ({ input, clear }) => {
               if (!input.trim()) return;
               clear();
-              await chat.sendMessage({ text: input, metadata });
+              await chat.sendMessage({ text: input });
             }}
           >
             <ComposerPrimitive.TextareaInput

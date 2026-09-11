@@ -1,6 +1,12 @@
 import { Button, EmptyState, PageHeader } from "@iom/ui";
 import { Plus } from "@phosphor-icons/react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  useNavigate,
+  useRouteContext,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { Conversation } from "@/lib/types";
@@ -11,9 +17,12 @@ export const Route = createFileRoute("/_app/chat")({
 });
 
 function ChatLanding() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { conversations } = Route.useLoaderData();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const { user } = useRouteContext({ from: "/_app" });
+  if (pathname !== "/chat") return <Outlet />;
   async function create(scope: "EMPLOYEE" | "HR" = "EMPLOYEE") {
     setBusy(true);
     try {
@@ -40,9 +49,16 @@ function ChatLanding() {
         title="Chat regulasi"
         description="Setiap jawaban ditelusuri ke IOM yang sesuai scope dan tanggal."
         actions={
-          <Button disabled={busy} onClick={() => create()}>
-            <Plus /> Percakapan baru
-          </Button>
+          <div className="header-action-group">
+            <Button disabled={busy} onClick={() => create("EMPLOYEE")}>
+              <Plus /> Chat employee-safe
+            </Button>
+            {user.role === "HR_ADMIN" ? (
+              <Button disabled={busy} onClick={() => create("HR")}>
+                <Plus /> Chat HR
+              </Button>
+            ) : null}
+          </div>
         }
       />
       {conversations.length === 0 ? (
