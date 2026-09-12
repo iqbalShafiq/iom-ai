@@ -29,8 +29,8 @@ import type { AppBindings } from "./types.js";
 
 const conversationSchema = z.object({
   accessScope: z.enum(["EMPLOYEE", "HR"]).default("EMPLOYEE"),
-  modelId: z.string().default("gpt-5.6-terra"),
-  reasoningEffort: z.string().default("medium"),
+  modelId: z.string().default("gpt-5.6-luna"),
+  reasoningEffort: z.string().default("none"),
 });
 
 async function deniedFingerprints(database: Database) {
@@ -69,7 +69,10 @@ async function* guardedAgentEvents(
       if (checked.released) yield { ...event, delta: checked.released };
       continue;
     }
-    if (["response", "blocked", "interaction", "error"].includes(event.type)) {
+    // A turn_end closes the message in the Client Protocol. Flush buffered
+    // content before it so the release guard cannot append a late suffix to an
+    // already-ended message (which renders the answer twice in the browser).
+    if (["turn_end", "response", "blocked", "interaction", "error"].includes(event.type)) {
       const finalText = textGuard.flush();
       const finalReasoning = reasoningGuard.flush();
       if (finalText.blocked || finalReasoning.blocked) {
@@ -247,7 +250,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
   app.get("/ai/models", (context) =>
     context.json({
       models: modelCatalog,
-      defaults: { modelId: "gpt-5.6-terra", reasoningEffort: "medium" },
+      defaults: { modelId: "gpt-5.6-luna", reasoningEffort: "none" },
     }),
   );
 
@@ -345,6 +348,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
       const agent = createIomAgent({
         model: createOpenAIModel(openai, selection.modelId),
         retrieval: index,
+        reasoningEffort: selection.reasoningEffort,
         scope: {
           actorId: actor.id,
           role: actor.role,
@@ -375,7 +379,6 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
         start: () =>
           agent.stream({
             messages: request.messages,
-            controls: { reasoningEffort: selection.reasoningEffort },
             abortSignal: context.req.raw.signal,
           }),
       });

@@ -111,8 +111,15 @@ export function ChatView(props: {
     const latest = props.storedMessages?.[0]?.content;
     return Array.isArray(latest) ? messagesToUIMessages(latest as never) : [];
   }, [props.storedMessages]);
-  const [modelId, setModelId] = useState(props.conversation.modelId);
-  const [effort, setEffort] = useState(props.conversation.reasoningEffort);
+  const initialPreference = reconcileModelPreference(
+    props.models,
+    props.conversation.modelId,
+    props.conversation.reasoningEffort,
+  );
+  const [modelId, setModelId] = useState(initialPreference?.model.id ?? props.conversation.modelId);
+  const [effort, setEffort] = useState(
+    initialPreference?.effort ?? props.conversation.reasoningEffort,
+  );
   const latestRunFailedRef = useRef(false);
   const model = props.models.find((item) => item.id === modelId) ?? props.models[0];
   const metadata = useMemo(

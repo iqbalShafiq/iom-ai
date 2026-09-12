@@ -6,11 +6,11 @@ export const modelCatalog = [
     id: "gpt-5.6-luna",
     label: "Luna",
     description: "Cepat dan hemat untuk pertanyaan regulasi sehari-hari.",
-    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
-    defaultReasoningEffort: "medium",
+    supportedReasoningEfforts: ["none"],
+    defaultReasoningEffort: "none",
     supportsStreaming: true,
     supportsTools: true,
-    supportsReasoningSummary: true,
+    supportsReasoningSummary: false,
   },
   {
     id: "gpt-5.6-terra",
@@ -61,6 +61,7 @@ export function createOpenAIModel(
 ): OpenAICompletionModel {
   switch (modelId) {
     case "gpt-5.6-luna":
+      return client.completionModel({ modelId, api: "chat" });
     case "gpt-5.6-terra":
     case "gpt-5.6-sol":
     case "gpt-6-astra":

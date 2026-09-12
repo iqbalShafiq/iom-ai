@@ -33,7 +33,6 @@ export function createOverlapAnalyzer(model: OpenAICompletionModel) {
     model,
     maxTurns: 1,
     outputSchema: overlapMatchSchema,
-    providerOptions: { reasoning: { summary: "auto" } },
     instructions: `
 Bandingkan draft IOM dengan satu IOM existing berdasarkan makna regulasi, bukan hanya istilah serupa.
 Identifikasi topik bersama, nilai lama dan usulan baru, tanggal efektif, konflik, dan pasangan evidence.

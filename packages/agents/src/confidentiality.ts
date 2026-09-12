@@ -26,7 +26,6 @@ export function createConfidentialityClassifier(model: OpenAICompletionModel) {
     model,
     maxTurns: 1,
     outputSchema: confidentialityDecisionSchema,
-    providerOptions: { reasoning: { summary: "auto" } },
     instructions: `
 Klasifikasikan potongan IOM berdasarkan makna, konteks section, kebijakan HR, contoh, dan marker manual.
 Jangan menggunakan daftar kata sebagai aturan deterministik. Kata hanya boleh menjadi salah satu evidence kontekstual.

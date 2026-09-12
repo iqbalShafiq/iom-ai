@@ -1773,31 +1773,43 @@ time,
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   background: var(--paper-light);
-  --chat-column: min(840px, 100% - 2rem);
   justify-items: normal;
-  padding-inline: calc((100% - var(--chat-column)) / 2) 0;
   box-sizing: border-box;
+  padding-bottom: 1rem;
+}
+/* One shared centered column for viewport + composer, measured once so
+   both edges match. The max-width caps it; auto margins center it. */
+.chat-thread > .chat-composer {
+  width: 100%;
+  max-width: 840px;
+  margin-inline: auto;
+  box-sizing: border-box;
+  min-width: 0;
 }
 .chat-viewport {
+  width: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 2rem 1rem 2rem 0;
+  padding: 2rem 1rem;
   position: relative;
+  box-sizing: border-box;
 }
 .chat-empty,
 .message-list,
 .chat-live-status,
 .chat-error,
 .chat-composer {
-  margin-inline: auto;
+  min-width: 0;
 }
+/* Children fill the shared column edge to edge, so bubbles, error card,
+   and composer align on both sides. */
 .chat-empty,
 .message-list,
 .chat-live-status,
 .chat-error {
-  width: 100%;
+  width: min(840px, 100%);
   box-sizing: border-box;
-  justify-self: normal;
+  margin-inline: auto;
 }
 .chat-empty {
   min-height: 70%;
@@ -1837,8 +1849,6 @@ time,
 .message-list {
   display: grid;
   gap: 1.6rem;
-  width: min(840px, 100%);
-  margin-inline: auto;
 }
 .message {
   max-width: none;
@@ -2026,6 +2036,9 @@ time,
   box-shadow: 2px 2px 0 var(--ink);
   display: flex;
   gap: 0.4rem;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .chat-composer {
   width: 100%;
@@ -2036,6 +2049,9 @@ time,
   box-sizing: border-box;
   justify-self: normal;
   padding: 0;
+  /* Decorative offset shadow must not widen the shared column. */
+  overflow: clip;
+  min-width: 0;
 }
 .chat-composer__input {
   width: 100%;
@@ -2390,6 +2406,7 @@ time,
   }
   .chat-layout {
     height: calc(100vh - 68px);
+    grid-template-rows: auto minmax(0, 1fr);
   }
   .chat-header {
     align-items: flex-start;

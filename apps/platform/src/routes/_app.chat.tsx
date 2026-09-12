@@ -32,8 +32,8 @@ function ChatLanding() {
           method: "POST",
           body: JSON.stringify({
             accessScope: scope,
-            modelId: "gpt-5.6-terra",
-            reasoningEffort: "medium",
+            modelId: "gpt-5.6-luna",
+            reasoningEffort: "none",
           }),
         },
       );

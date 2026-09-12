@@ -11,6 +11,16 @@ describe("agent policies", () => {
     );
   });
 
+  it("keeps Luna on the tool-compatible no-reasoning mode", () => {
+    expect(resolveModelSelection("gpt-5.6-luna", "none")).toEqual({
+      modelId: "gpt-5.6-luna",
+      reasoningEffort: "none",
+    });
+    expect(() => resolveModelSelection("gpt-5.6-luna", "high")).toThrow(
+      "REASONING_EFFORT_NOT_SUPPORTED",
+    );
+  });
+
   it("fuses independent retrieval rankings", () => {
     const ranked = reciprocalRankFusion([
       [{ id: "a" }, { id: "b" }],

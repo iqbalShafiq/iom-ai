@@ -3,6 +3,7 @@ import { createTool } from "@anvia/core/tool";
 import type { OpenAICompletionModel } from "@anvia/openai";
 import {
   type AccessScope,
+  type ReasoningEffort,
   type SearchIomOutput,
   searchIomInputSchema,
   searchIomOutputSchema,
@@ -35,19 +36,20 @@ export function createIomAgent(options: {
   model: OpenAICompletionModel;
   retrieval: RetrievalService;
   scope: IomAgentScope;
+  reasoningEffort: ReasoningEffort;
 }) {
   return new Agent({
     id: "iom-regulation-assistant",
     name: "Asisten Regulasi IOM",
     description: "Menjawab pertanyaan IOM berdasarkan bukti yang terotorisasi dan bertanggal.",
     model: options.model,
+    controls: { reasoningEffort: options.reasoningEffort },
     maxTurns: 4,
     toolChoice: "auto",
     // The search tool is the only tool. Parallel tool calls are disabled because
     // OpenAI may cancel one of its parallel function calls when reasoning is
     // high, which the Anvia adapter rejects as an invalid tool call.
     providerOptions: {
-      reasoning: { summary: "auto" },
       parallel_tool_calls: false,
     },
     tools: [createSearchIomTool(options.retrieval, options.scope)],
