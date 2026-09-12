@@ -1,4 +1,9 @@
-import { createHttpClientTransport, messagesToUIMessages, type UIMessagePart } from "@anvia/client";
+import {
+  createHttpClientTransport,
+  messagesToUIMessages,
+  type UIMessage,
+  type UIMessagePart,
+} from "@anvia/client";
 import { useChat } from "@anvia/react";
 import {
   ChatProvider,
@@ -15,7 +20,7 @@ import {
   PaperPlaneTilt,
   Stop,
 } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { apiUrl } from "@/lib/api";
 import type { Conversation } from "@/lib/types";
 import { reconcileModelPreference } from "./model-preference";
@@ -44,6 +49,26 @@ function ToolPart() {
   );
 }
 
+function finalizePendingChatMessages(messages: readonly UIMessage[]): readonly UIMessage[] {
+  return messages.flatMap((message) => {
+    const parts = (message as { parts?: readonly unknown[] }).parts;
+    if (!Array.isArray(parts)) return [message];
+    // Drop tool calls that were still streaming when the run failed: they have
+    // no complete input and cannot be replayed, and rendering them as errors
+    // crashes the react-ui ToolError primitive.
+    const kept = parts.filter(
+      (part) =>
+        !(
+          (part as { type?: string; state?: string }).type === "tool" &&
+          (part as { state?: string }).state === "input-streaming"
+        ),
+    );
+    if (kept.length === parts.length) return [message];
+    if (kept.length === 0) return [];
+    return [{ ...message, parts: kept }];
+  });
+}
+
 function ChatPart({ part }: { part: UIMessagePart }) {
   if (part.type === "text") return <MessagePrimitive.Markdown />;
   if (part.type === "reasoning") {
@@ -57,6 +82,7 @@ function ChatPart({ part }: { part: UIMessagePart }) {
     );
   }
   if (part.type === "tool") return <ToolPart />;
+  if (part.type === "error") return null;
   if (part.type === "source") {
     return (
       <a className="source-card" href={part.source.url ?? "#"} target="_blank" rel="noreferrer">
@@ -87,6 +113,7 @@ export function ChatView(props: {
   }, [props.storedMessages]);
   const [modelId, setModelId] = useState(props.conversation.modelId);
   const [effort, setEffort] = useState(props.conversation.reasoningEffort);
+  const latestRunFailedRef = useRef(false);
   const model = props.models.find((item) => item.id === modelId) ?? props.models[0];
   const metadata = useMemo(
     () => ({
@@ -127,6 +154,29 @@ export function ChatView(props: {
     ],
   });
   const isRunning = chat.status === "submitted" || chat.status === "streaming";
+  const submit = async (input: string): Promise<void> => {
+    if (!input.trim() || isRunning) return;
+    if (latestRunFailedRef.current) {
+      latestRunFailedRef.current = false;
+      chat.setMessages((messages) => finalizePendingChatMessages(messages));
+    }
+    await chat.sendMessage({ text: input });
+  };
+  const handleStatusChange = (status: string) => {
+    if (status === "error" || status === "ready") {
+      latestRunFailedRef.current = status === "error";
+      if (status === "error") {
+        chat.setMessages((messages) => finalizePendingChatMessages(messages));
+      }
+    }
+  };
+  // Finalize tool parts that are still streaming when a run errors, so the next
+  // submit does not crash converting them into a replayable model message.
+  const previousStatusRef = useRef(chat.status);
+  if (previousStatusRef.current !== chat.status) {
+    previousStatusRef.current = chat.status;
+    handleStatusChange(chat.status);
+  }
   return (
     <ChatProvider controller={chat}>
       <div className="chat-layout">
@@ -242,7 +292,7 @@ export function ChatView(props: {
             submitMessage={async ({ input, clear }) => {
               if (!input.trim()) return;
               clear();
-              await chat.sendMessage({ text: input });
+              await submit(input);
             }}
           >
             <ComposerPrimitive.TextareaInput
