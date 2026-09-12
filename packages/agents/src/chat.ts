@@ -43,8 +43,14 @@ export function createIomAgent(options: {
     model: options.model,
     maxTurns: 4,
     toolChoice: "auto",
+    // The search tool is the only tool. Parallel tool calls are disabled because
+    // OpenAI may cancel one of its parallel function calls when reasoning is
+    // high, which the Anvia adapter rejects as an invalid tool call.
+    providerOptions: {
+      reasoning: { summary: "auto" },
+      parallel_tool_calls: false,
+    },
     tools: [createSearchIomTool(options.retrieval, options.scope)],
-    providerOptions: { reasoning: { summary: "auto" } },
     instructions: `
 Anda adalah asisten regulasi IOM perusahaan. IOM adalah memo internal kantor.
 

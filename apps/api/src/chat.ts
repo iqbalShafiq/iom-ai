@@ -4,7 +4,7 @@ import {
   type ClientStreamEvent,
   parseClientStreamRequest,
 } from "@anvia/client";
-import type { AgentStreamEvent } from "@anvia/core/agent";
+import type { AgentStream, AgentStreamEvent } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
 import { createClientStreamResponse } from "@anvia/server";
 import {
@@ -87,6 +87,93 @@ async function* guardedAgentEvents(
       if (finalText.released) yield { type: "text_delta", turn, delta: finalText.released };
     }
     yield event;
+  }
+}
+
+// Provider output errors that are safe to retry: the model produced a malformed,
+// truncated, or cancelled tool call. They happen non-deterministically while
+// streaming, and Anvia's internal retry is skipped once reasoning is exposed.
+const RETRYABLE_PROVIDER_OUTPUT_KINDS = new Set([
+  "malformed-tool-arguments",
+  "invalid-tool-arguments",
+  "invalid-stream-event",
+  "incomplete-stream",
+  "incomplete-tool-call",
+  "invalid-tool-call",
+  "truncated-tool-call",
+]);
+
+function isRetryableProviderOutputError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  if (code !== "ANVIA_COMPLETION_PROVIDER_OUTPUT") return false;
+  const kind = (error as { kind?: unknown }).kind;
+  return typeof kind !== "string" || RETRYABLE_PROVIDER_OUTPUT_KINDS.has(kind);
+}
+
+// Runs the agent stream with retries. Reasoning and tool events are buffered
+// until the first answer text is released; a retryable provider error before
+// that point restarts the run silently, so the client never sees partial
+// reasoning from a discarded attempt. After text starts, the stream is live.
+// A failed attempt is cancelled before retrying so its in-flight provider
+// call cannot interleave with the replacement run. Only the confidentiality
+// guard also needs cancel: it throws after detecting blocked content.
+async function* runAgentWithRetries(options: {
+  start: () => AgentStream;
+  fingerprints: Awaited<ReturnType<typeof deniedFingerprints>>;
+  maxRetries: number;
+  onRetry?: (attempt: number, error: unknown) => void;
+}): AsyncIterable<AgentStreamEvent> {
+  const { start, fingerprints, maxRetries, onRetry } = options;
+  let attempt = 0;
+  for (;;) {
+    const run = start();
+    const events = guardedAgentEvents(run.events, fingerprints, () => {
+      try {
+        run.cancel("stream-guard");
+      } catch {
+        // Best effort: the run may already be finished when the guard fires.
+      }
+    });
+    const pending: AgentStreamEvent[] = [];
+    let released = false;
+    let retry = false;
+    for await (const event of events) {
+      if (released) {
+        yield event;
+        continue;
+      }
+      if (event.type === "text_delta" && event.delta.length > 0) {
+        released = true;
+        yield* pending;
+        pending.length = 0;
+        yield event;
+        continue;
+      }
+      if (event.type === "error") {
+        if (attempt < maxRetries && isRetryableProviderOutputError(event.error)) {
+          onRetry?.(attempt + 1, event.error);
+          try {
+            run.cancel("stream-retry");
+          } catch {
+            // Best effort: the failed attempt owns no resources worth failing for.
+          }
+          retry = true;
+          break;
+        }
+        released = true;
+        yield* pending;
+        pending.length = 0;
+        yield event;
+        continue;
+      }
+      pending.push(event);
+    }
+    if (!retry) {
+      yield* pending;
+      return;
+    }
+    attempt += 1;
   }
 }
 
@@ -265,26 +352,84 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
           policyVersion: currentPolicy.version,
         },
       });
-      const stream = agent.stream({
-        messages: request.messages,
-        controls: { reasoningEffort: selection.reasoningEffort },
-        abortSignal: context.req.raw.signal,
+      const stream = runAgentWithRetries({
+        maxRetries: 2,
+        fingerprints: await deniedFingerprints(database),
+        onRetry: (attempt, error) => {
+          console.error(
+            JSON.stringify({
+              level: "warn",
+              correlationId: context.get("correlationId"),
+              message: "Chat run retried after provider output error",
+              conversationId: conversation.id,
+              modelId: selection.modelId,
+              reasoningEffort: selection.reasoningEffort,
+              attempt,
+              providerMessage:
+                typeof (error as { message?: unknown })?.message === "string"
+                  ? (error as { message: string }).message
+                  : undefined,
+            }),
+          );
+        },
+        start: () =>
+          agent.stream({
+            messages: request.messages,
+            controls: { reasoningEffort: selection.reasoningEffort },
+            abortSignal: context.req.raw.signal,
+          }),
       });
-      const fingerprints = await deniedFingerprints(database);
       const runId = randomUUID();
+      const logError = (error: unknown) => {
+        const providerStatus =
+          typeof (error as { status?: unknown })?.status === "number"
+            ? (error as { status: number }).status
+            : undefined;
+        const providerMessage =
+          typeof (error as { message?: unknown })?.message === "string"
+            ? (error as { message: string }).message
+            : undefined;
+        console.error(
+          JSON.stringify({
+            level: "error",
+            correlationId: context.get("correlationId"),
+            message: "Chat run failed",
+            conversationId: conversation.id,
+            modelId: selection.modelId,
+            reasoningEffort: selection.reasoningEffort,
+            errorKind: error instanceof Error ? error.constructor.name : "UnknownError",
+            providerStatus,
+            providerMessage,
+            // Config keys are not logged; OpenAI SDK may embed key fragments in error messages.
+            providerKind:
+              typeof (error as { kind?: unknown })?.kind === "string"
+                ? (error as { kind: string }).kind
+                : undefined,
+            providerCode:
+              typeof (error as { code?: unknown })?.code === "string"
+                ? (error as { code: string }).code
+                : undefined,
+            providerParam:
+              typeof (error as { param?: unknown })?.param === "string"
+                ? (error as { param: string }).param
+                : undefined,
+          }),
+        );
+      };
       const projected = agentToClientStream({
         runId,
-        events: guardedAgentEvents(stream.events, fingerprints, () =>
-          stream.cancel("stream-guard"),
-        ),
+        events: stream,
         metadata: metadata.data,
-        mapError: (error) => ({
-          code: "CHAT_RUN_FAILED",
-          message:
-            error instanceof Error && error.message === "STREAM_CONFIDENTIALITY_BLOCKED"
-              ? "Jawaban dihentikan oleh pemeriksaan kerahasiaan."
-              : "Chat gagal diproses. Silakan coba lagi.",
-        }),
+        mapError: (error) => {
+          logError(error);
+          return {
+            code: "CHAT_RUN_FAILED",
+            message:
+              error instanceof Error && error.message === "STREAM_CONFIDENTIALITY_BLOCKED"
+                ? "Jawaban dihentikan oleh pemeriksaan kerahasiaan."
+                : "Chat gagal diproses. Silakan coba lagi.",
+          };
+        },
       });
       void audit(database, {
         actorId: actor.id,
