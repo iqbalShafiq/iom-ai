@@ -1,4 +1,14 @@
-import { Button, ConfirmDialog, Field, Input, PageHeader, Panel, StatusStamp } from "@iom/ui";
+import {
+  Button,
+  ConfirmDialog,
+  Field,
+  Input,
+  PageHeader,
+  Panel,
+  Select,
+  SelectOption,
+  StatusStamp,
+} from "@iom/ui";
 import { Calendar, Check, EyeSlash, FilePdf, GitBranch, Warning } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { type FormEvent, useMemo, useState } from "react";
@@ -17,6 +27,7 @@ export const Route = createFileRoute("/_app/hr/documents/$versionId")({
 });
 
 type ReviewChoice = "EMPLOYEE_SAFE" | "HR_ONLY";
+type DetailTab = "review" | "metadata" | "relations";
 
 function MarkedText({
   text,
@@ -81,7 +92,10 @@ function DocumentDetail() {
   const [publishOpen, setPublishOpen] = useState(false);
   const [relationTarget, setRelationTarget] = useState("");
   const [relationType, setRelationType] = useState("REPLACES");
+  const [activeTab, setActiveTab] = useState<DetailTab>("review");
   const unresolved = version.chunks?.filter((chunk) => chunk.visibility === "NEEDS_REVIEW") ?? [];
+  const decisionCount = Object.keys(choices).length;
+
   async function saveReview() {
     const decisions = Object.entries(choices).map(([chunkId, visibility]) => ({
       chunkId,
@@ -104,6 +118,7 @@ function DocumentDetail() {
       setBusy(false);
     }
   }
+
   function confirmAiDecisions() {
     setChoices(
       Object.fromEntries(
@@ -113,6 +128,7 @@ function DocumentDetail() {
       ),
     );
   }
+
   async function publish() {
     setBusy(true);
     try {
@@ -123,6 +139,7 @@ function DocumentDetail() {
       setBusy(false);
     }
   }
+
   async function saveMetadata(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -144,6 +161,7 @@ function DocumentDetail() {
       setBusy(false);
     }
   }
+
   async function saveRelation() {
     if (!relationTarget) return;
     setBusy(true);
@@ -161,6 +179,9 @@ function DocumentDetail() {
       setBusy(false);
     }
   }
+
+  const isPublished = ["PUBLISHED", "SUPERSEDED", "ARCHIVED"].includes(version.status);
+
   return (
     <div className="page-stack document-detail">
       <PageHeader
@@ -190,10 +211,144 @@ function DocumentDetail() {
           <EyeSlash /> {unresolved.length} belum diputuskan
         </span>
       </div>
-      {!["PUBLISHED", "SUPERSEDED", "ARCHIVED"].includes(version.status) ? (
-        <details className="metadata-editor">
-          <summary>Edit identitas dan versioning IOM</summary>
-          <form onSubmit={saveMetadata}>
+      <nav className="detail-tabs" aria-label="Bagian dokumen">
+        <button
+          type="button"
+          data-active={activeTab === "review"}
+          onClick={() => setActiveTab("review")}
+        >
+          Review <strong>{version.chunks?.length ?? 0}</strong>
+        </button>
+        {!isPublished ? (
+          <button
+            type="button"
+            data-active={activeTab === "metadata"}
+            onClick={() => setActiveTab("metadata")}
+          >
+            Metadata
+          </button>
+        ) : null}
+        <button
+          type="button"
+          data-active={activeTab === "relations"}
+          onClick={() => setActiveTab("relations")}
+        >
+          Jejak aturan
+        </button>
+      </nav>
+      {error ? (
+        <div className="form-alert" role="alert">
+          <Warning /> {error}
+        </div>
+      ) : null}
+      <div className="detail-main" role="tabpanel">
+        {activeTab === "review" ? (
+          <div className="review-split">
+            <div className="document-preview">
+              {version.uploadedFile?.mimeType === "application/pdf" ? (
+                <iframe
+                  title={`Preview ${version.title}`}
+                  src={apiUrl(`/iom/${version.id}/file`)}
+                />
+              ) : (
+                <div className="preview-placeholder">
+                  <FilePdf size={44} />
+                  <strong>Preview teks tersedia di panel review</strong>
+                  <span>Format asli bukan PDF atau preview browser tidak tersedia.</span>
+                </div>
+              )}
+            </div>
+            <div className="review-panel">
+              <div className="review-panel__head">
+                <span>AI + HR REVIEW</span>
+                <strong>{version.chunks?.length ?? 0} chunks</strong>
+              </div>
+              {version.status === "IN_REVIEW" && unresolved.length === 0 ? (
+                <div className="ai-rationale">
+                  <strong>Persetujuan HR diperlukan</strong>
+                  <p>
+                    AI telah memberi klasifikasi pada semua chunk. Konfirmasikan hasilnya sebelum
+                    IOM dapat dipublish.
+                  </p>
+                  <Button disabled={busy} onClick={confirmAiDecisions}>
+                    Konfirmasi semua keputusan AI
+                  </Button>
+                </div>
+              ) : null}
+              {version.chunks?.map((chunk) => {
+                const decision = chunk.decisions[0];
+                const selected =
+                  choices[chunk.id] ??
+                  (chunk.visibility === "NEEDS_REVIEW"
+                    ? undefined
+                    : (chunk.visibility as ReviewChoice));
+                return (
+                  <article
+                    key={chunk.id}
+                    className="chunk-review"
+                    data-state={chunk.visibility.toLowerCase()}
+                  >
+                    <header>
+                      <span>
+                        CHUNK {String(chunk.ordinal + 1).padStart(2, "0")} / PAGE{" "}
+                        {chunk.pageStart ?? "—"}
+                      </span>
+                      <StatusStamp status={chunk.visibility} />
+                    </header>
+                    <MarkedText text={chunk.text} spans={decision?.sensitiveSpans ?? []} />
+                    <div className="ai-rationale">
+                      <strong>Alasan AI</strong>
+                      <p>{decision?.rationale ?? "Klasifikasi belum tersedia."}</p>
+                      <span>
+                        Confidence {Math.round((chunk.classificationConfidence ?? 0) * 100)}%
+                      </span>
+                    </div>
+                    {chunk.visibility === "NEEDS_REVIEW" ? (
+                      <div className="decision-controls">
+                        <div>
+                          <button
+                            type="button"
+                            data-selected={selected === "EMPLOYEE_SAFE"}
+                            onClick={() =>
+                              setChoices((current) => ({
+                                ...current,
+                                [chunk.id]: "EMPLOYEE_SAFE",
+                              }))
+                            }
+                          >
+                            Employee safe
+                          </button>
+                          <button
+                            type="button"
+                            data-selected={selected === "HR_ONLY"}
+                            onClick={() =>
+                              setChoices((current) => ({ ...current, [chunk.id]: "HR_ONLY" }))
+                            }
+                          >
+                            HR only
+                          </button>
+                        </div>
+                        <textarea
+                          aria-label={`Alasan chunk ${chunk.ordinal + 1}`}
+                          placeholder="Alasan keputusan HR"
+                          value={notes[chunk.id] ?? ""}
+                          onChange={(event) =>
+                            setNotes((current) => ({
+                              ...current,
+                              [chunk.id]: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+        {activeTab === "metadata" && !isPublished ? (
+          <form className="metadata-editor" onSubmit={saveMetadata}>
             <Field label="Nomor IOM">
               <Input name="iomNumber" defaultValue={version.iomNumber} required />
             </Field>
@@ -219,183 +374,88 @@ function DocumentDetail() {
               label="Versi sebelumnya"
               hint="Opsional. Pilih jika file ini adalah revisi dari identitas IOM yang sama."
             >
-              <select name="previousVersionId" defaultValue="">
-                <option value="">IOM independen / belum ditentukan</option>
+              <Select name="previousVersionId" defaultValue="">
+                <SelectOption value="">IOM independen / belum ditentukan</SelectOption>
                 {versions
                   .filter((candidate) => candidate.id !== version.id)
                   .map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
+                    <SelectOption key={candidate.id} value={candidate.id}>
                       {candidate.iomNumber} · rev {candidate.revision} · {candidate.title}
-                    </option>
+                    </SelectOption>
                   ))}
-              </select>
+              </Select>
             </Field>
             <Button disabled={busy} type="submit">
               Simpan metadata
             </Button>
           </form>
-        </details>
-      ) : null}
-      <div className="review-split">
-        <div className="document-preview">
-          {version.uploadedFile?.mimeType === "application/pdf" ? (
-            <iframe title={`Preview ${version.title}`} src={apiUrl(`/iom/${version.id}/file`)} />
-          ) : (
-            <div className="preview-placeholder">
-              <FilePdf size={44} />
-              <strong>Preview teks tersedia di panel review</strong>
-              <span>Format asli bukan PDF atau preview browser tidak tersedia.</span>
+        ) : null}
+        {activeTab === "relations" ? (
+          <Panel className="version-timeline">
+            <span className="section-index">VERSION RELATIONSHIPS</span>
+            <h2>Jejak aturan</h2>
+            <div>
+              {version.incomingRelations?.map((relation) => (
+                <span key={relation.id}>
+                  <StatusStamp status={relation.type} />
+                  <strong>{relation.sourceVersion.iomNumber}</strong> menuju versi ini
+                </span>
+              ))}
+              <span className="timeline-current">
+                <StatusStamp status="CURRENT" />
+                <strong>{version.iomNumber}</strong> revision {version.revision}
+              </span>
+              {version.outgoingRelations?.map((relation) => (
+                <span key={relation.id}>
+                  <StatusStamp status={relation.type} />
+                  <strong>{relation.targetVersion.iomNumber}</strong> terdampak versi ini
+                </span>
+              ))}
             </div>
-          )}
-        </div>
-        <div className="review-panel">
-          <div className="review-panel__head">
-            <span>AI + HR REVIEW</span>
-            <strong>{version.chunks?.length ?? 0} chunks</strong>
-          </div>
-          {version.status === "IN_REVIEW" && unresolved.length === 0 ? (
-            <div className="ai-rationale">
-              <strong>Persetujuan HR diperlukan</strong>
-              <p>
-                AI telah memberi klasifikasi pada semua chunk. Konfirmasikan hasilnya sebelum IOM
-                dapat dipublish.
-              </p>
-              <Button disabled={busy} onClick={confirmAiDecisions}>
-                Konfirmasi semua keputusan AI
-              </Button>
-            </div>
-          ) : null}
-          {version.chunks?.map((chunk) => {
-            const decision = chunk.decisions[0];
-            const selected =
-              choices[chunk.id] ??
-              (chunk.visibility === "NEEDS_REVIEW"
-                ? undefined
-                : (chunk.visibility as ReviewChoice));
-            return (
-              <article
-                key={chunk.id}
-                className="chunk-review"
-                data-state={chunk.visibility.toLowerCase()}
-              >
-                <header>
-                  <span>
-                    CHUNK {String(chunk.ordinal + 1).padStart(2, "0")} / PAGE{" "}
-                    {chunk.pageStart ?? "—"}
-                  </span>
-                  <StatusStamp status={chunk.visibility} />
-                </header>
-                <MarkedText text={chunk.text} spans={decision?.sensitiveSpans ?? []} />
-                <div className="ai-rationale">
-                  <strong>Alasan AI</strong>
-                  <p>{decision?.rationale ?? "Klasifikasi belum tersedia."}</p>
-                  <span>Confidence {Math.round((chunk.classificationConfidence ?? 0) * 100)}%</span>
-                </div>
-                {chunk.visibility === "NEEDS_REVIEW" ? (
-                  <div className="decision-controls">
-                    <div>
-                      <button
-                        type="button"
-                        data-selected={selected === "EMPLOYEE_SAFE"}
-                        onClick={() =>
-                          setChoices((current) => ({ ...current, [chunk.id]: "EMPLOYEE_SAFE" }))
-                        }
-                      >
-                        Employee safe
-                      </button>
-                      <button
-                        type="button"
-                        data-selected={selected === "HR_ONLY"}
-                        onClick={() =>
-                          setChoices((current) => ({ ...current, [chunk.id]: "HR_ONLY" }))
-                        }
-                      >
-                        HR only
-                      </button>
-                    </div>
-                    <textarea
-                      aria-label={`Alasan chunk ${chunk.ordinal + 1}`}
-                      placeholder="Alasan keputusan HR"
-                      value={notes[chunk.id] ?? ""}
-                      onChange={(event) =>
-                        setNotes((current) => ({ ...current, [chunk.id]: event.target.value }))
-                      }
-                    />
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
-        </div>
+            {!version.outgoingRelations?.length ? (
+              <div className="inline-control">
+                <Select
+                  aria-label="IOM terdampak"
+                  value={relationTarget}
+                  onChange={(event) => setRelationTarget(event.target.value)}
+                >
+                  <SelectOption value="">Pilih IOM terdampak</SelectOption>
+                  {versions
+                    .filter((candidate) => candidate.id !== version.id)
+                    .map((candidate) => (
+                      <SelectOption key={candidate.id} value={candidate.id}>
+                        {candidate.iomNumber} — {candidate.title}
+                      </SelectOption>
+                    ))}
+                </Select>
+                <Select
+                  aria-label="Jenis relasi"
+                  value={relationType}
+                  onChange={(event) => setRelationType(event.target.value)}
+                >
+                  <SelectOption value="REPLACES">Menggantikan</SelectOption>
+                  <SelectOption value="COMPLEMENTS">Melengkapi</SelectOption>
+                  <SelectOption value="PARTIALLY_OVERRIDES">Mengubah sebagian</SelectOption>
+                  <SelectOption value="RELATED">Terkait</SelectOption>
+                </Select>
+                <Button disabled={busy || !relationTarget} type="button" onClick={saveRelation}>
+                  Konfirmasi relasi
+                </Button>
+              </div>
+            ) : null}
+          </Panel>
+        ) : null}
       </div>
-      {Object.keys(choices).length ? (
+      {decisionCount ? (
         <div className="sticky-review-bar">
           <span>
-            <Warning /> {Object.keys(choices).length} perubahan belum disimpan
+            <Warning /> {decisionCount} perubahan belum disimpan
           </span>
           <Button disabled={busy} onClick={saveReview}>
             Simpan keputusan
           </Button>
         </div>
       ) : null}
-      {error ? (
-        <div className="form-alert" role="alert">
-          <Warning /> {error}
-        </div>
-      ) : null}
-      <Panel className="version-timeline">
-        <span className="section-index">VERSION RELATIONSHIPS</span>
-        <h2>Jejak aturan</h2>
-        <div>
-          {version.incomingRelations?.map((relation) => (
-            <span key={relation.id}>
-              <StatusStamp status={relation.type} />
-              <strong>{relation.sourceVersion.iomNumber}</strong> menuju versi ini
-            </span>
-          ))}
-          <span className="timeline-current">
-            <StatusStamp status="CURRENT" />
-            <strong>{version.iomNumber}</strong> revision {version.revision}
-          </span>
-          {version.outgoingRelations?.map((relation) => (
-            <span key={relation.id}>
-              <StatusStamp status={relation.type} />
-              <strong>{relation.targetVersion.iomNumber}</strong> terdampak versi ini
-            </span>
-          ))}
-        </div>
-        {!version.outgoingRelations?.length ? (
-          <div className="inline-control">
-            <select
-              aria-label="IOM terdampak"
-              value={relationTarget}
-              onChange={(event) => setRelationTarget(event.target.value)}
-            >
-              <option value="">Pilih IOM terdampak</option>
-              {versions
-                .filter((candidate) => candidate.id !== version.id)
-                .map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.iomNumber} — {candidate.title}
-                  </option>
-                ))}
-            </select>
-            <select
-              aria-label="Jenis relasi"
-              value={relationType}
-              onChange={(event) => setRelationType(event.target.value)}
-            >
-              <option value="REPLACES">Menggantikan</option>
-              <option value="COMPLEMENTS">Melengkapi</option>
-              <option value="PARTIALLY_OVERRIDES">Mengubah sebagian</option>
-              <option value="RELATED">Terkait</option>
-            </select>
-            <Button disabled={busy || !relationTarget} type="button" onClick={saveRelation}>
-              Konfirmasi relasi
-            </Button>
-          </div>
-        ) : null}
-      </Panel>
       <ConfirmDialog
         open={publishOpen}
         title="Publish IOM ini?"

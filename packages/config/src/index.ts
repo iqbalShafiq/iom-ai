@@ -31,6 +31,10 @@ const serverSchema = z.object({
   OVERLAP_MODEL_ID: z
     .enum(["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"])
     .default("gpt-5.6-sol"),
+  // Optional JSON array of ModelOption entries appended to the built-in model
+  // catalog (deployment-specific OpenAI-compatible gateways). Parsed and
+  // validated in @iom/agents; invalid entries are ignored.
+  MODEL_CATALOG_OVERRIDE: z.string().optional(),
 });
 
 const browserSchema = z.object({ VITE_API_URL: z.url() });

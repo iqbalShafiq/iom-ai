@@ -857,7 +857,9 @@ time,
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 245px minmax(0, 1fr);
 }
@@ -942,13 +944,78 @@ time,
 }
 .app-content {
   min-width: 0;
+  height: 100dvh;
+  min-height: 0;
+  overflow-y: auto;
   padding: clamp(1.25rem, 3vw, 3rem);
+}
+/* The document detail page owns its own full-viewport layout: the root
+   content area stops scrolling and every inner region scrolls instead. */
+.app-content:has(.document-detail) {
+  overflow: hidden;
+  padding: 1rem;
 }
 .page-stack {
   display: grid;
   gap: 2rem;
   max-width: 1500px;
   margin: 0 auto;
+}
+/* Full-viewport page layout: header + strip + tabs stay fixed, the main
+   region stretches and scrolls internally, and the review bar docks at the
+   bottom. The root layout never scrolls on this page. */
+.document-detail {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 0.6rem;
+}
+.document-detail .page-header {
+  padding-bottom: 0.6rem;
+  align-items: center;
+}
+.document-detail .page-header p {
+  margin: 0;
+}
+.detail-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-bottom: var(--line);
+  padding-bottom: 0.25rem;
+}
+.detail-tabs button {
+  border: 1.5px solid var(--ink);
+  background: var(--paper-light);
+  font-weight: 700;
+  padding: 0.45rem 0.8rem;
+}
+.detail-tabs button[data-active="true"] {
+  background: var(--yellow);
+  box-shadow: 2px 2px 0 var(--ink);
+  transform: translate(-1px, -1px);
+}
+.detail-tabs button strong {
+  font-family: "JetBrains Mono Variable", monospace;
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+.detail-main {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.detail-main > .review-split {
+  flex: 1;
+  min-height: 0;
+}
+.detail-main > .metadata-editor,
+.detail-main > .ui-panel {
+  overflow-y: auto;
+  min-height: 0;
 }
 .page-header {
   display: flex;
@@ -987,14 +1054,101 @@ time,
   align-items: center;
   flex-wrap: wrap;
 }
-.page-header select,
-.inline-control select,
-.model-controls select {
+.ui-select,
+.ui-select__option {
+  font: inherit;
+  color: inherit;
+}
+/* The root .ui-select is a positioned container: the trigger button and the
+   absolutely positioned option menu live inside it. */
+.ui-select {
+  position: relative;
+  width: 100%;
+}
+.ui-select__native {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+.ui-select__trigger {
+  appearance: none;
+  width: 100%;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  background: var(--paper-light);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0.8rem;
+  gap: 0.8rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+.ui-select__trigger:hover {
+  background: #f6f1e4;
+}
+.ui-select__trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+.ui-select__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-select__chevron {
+  flex: 0 0 auto;
+}
+.ui-select__menu {
+  position: fixed;
+  z-index: 30;
+  margin-top: 0;
   border: 1.5px solid var(--ink);
   background: var(--paper-light);
+  box-shadow: var(--shadow);
+  max-height: 260px;
+  overflow-y: auto;
+  display: grid;
+  gap: 1px;
+  background-color: transparent;
+}
+.ui-select__option {
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid rgba(32, 32, 30, 0.35);
+  background: var(--paper-light);
   min-height: 40px;
-  padding: 0.45rem 0.7rem;
-  border-radius: 2px;
+  padding: 0.55rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: left;
+  cursor: pointer;
+  font-weight: 600;
+}
+.ui-select__option:last-child {
+  border-bottom: 0;
+}
+.ui-select__option[data-active="true"],
+.ui-select__option:focus-visible {
+  background: #f6f1e4;
+  outline: 3px solid var(--orange);
+  outline-offset: -3px;
+}
+.ui-select__option[aria-selected="true"] {
+  box-shadow: inset 3px 0 0 var(--orange);
+}
+.ui-select__check {
+  flex: 0 0 auto;
+}
+.inline-control .ui-select,
+.page-header .ui-select {
+  width: auto;
+  min-width: 160px;
 }
 
 .operations-board {
@@ -1309,41 +1463,36 @@ time,
   border: var(--line);
   background: var(--paper-light);
   box-shadow: var(--shadow);
-}
-.metadata-editor > summary {
-  cursor: pointer;
-  padding: 0.9rem 1rem;
-  font-weight: 750;
-}
-.metadata-editor > form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   padding: 1rem;
-  border-top: var(--line);
+  max-height: 100%;
 }
-.metadata-editor select {
-  width: 100%;
+.metadata-editor .ui-select {
   min-height: 44px;
-  border: var(--line);
-  background: #fffdf7;
-  padding: 0 0.7rem;
 }
 .review-split {
   display: grid;
   grid-template-columns: minmax(360px, 0.9fr) minmax(460px, 1.1fr);
   border: var(--line);
-  min-height: 680px;
+  min-height: 0;
+  height: 100%;
   background: var(--paper-light);
+  overflow: hidden;
 }
 .document-preview {
-  position: sticky;
-  top: 1rem;
-  height: calc(100vh - 2rem);
-  min-height: 680px;
+  position: static;
+  top: auto;
+  height: 100%;
+  min-height: 0;
   border-right: var(--line);
   background: #393936;
   padding: 1rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .document-preview iframe {
   width: 100%;
@@ -1366,7 +1515,8 @@ time,
 }
 .review-panel {
   min-width: 0;
-  max-height: calc(100vh - 2rem);
+  height: 100%;
+  max-height: none;
   overflow: auto;
 }
 .review-panel__head {
@@ -1750,24 +1900,6 @@ time,
   font-size: 0.62rem;
   font-weight: 800;
 }
-.model-controls {
-  display: flex;
-  gap: 0.6rem;
-}
-.model-controls label {
-  display: grid;
-  gap: 0.2rem;
-  font:
-    700 0.64rem "JetBrains Mono Variable",
-    monospace;
-  text-transform: uppercase;
-}
-.model-controls select {
-  min-width: 120px;
-  font:
-    600 0.75rem "JetBrains Mono Variable",
-    monospace;
-}
 .chat-thread {
   min-height: 0;
   display: grid;
@@ -2028,17 +2160,23 @@ time,
 }
 .scroll-bottom {
   position: sticky;
-  bottom: 0.5rem;
-  margin-left: auto;
+  bottom: 0.75rem;
+  margin-inline: auto;
   border: 1.5px solid var(--ink);
   background: var(--paper-light);
   padding: 0.4rem 0.65rem;
   box-shadow: 2px 2px 0 var(--ink);
   display: flex;
   gap: 0.4rem;
+  align-items: center;
   width: max-content;
   max-width: 100%;
   box-sizing: border-box;
+  cursor: pointer;
+}
+.scroll-bottom:hover,
+.scroll-bottom:focus-visible {
+  background: var(--paper);
 }
 .chat-composer {
   width: 100%;
@@ -2067,13 +2205,21 @@ time,
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.8rem;
   padding: 0.55rem;
 }
-.chat-composer__footer > span {
+.composer-model-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.composer-model-controls .ui-select {
+  min-width: 120px;
+  width: auto;
   font:
-    700 0.65rem "JetBrains Mono Variable",
+    600 0.75rem "JetBrains Mono Variable",
     monospace;
-  color: var(--muted);
 }
 .composer-action {
   border: 1.5px solid var(--ink);
@@ -2126,17 +2272,21 @@ time,
   }
   .review-split {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 34dvh) minmax(0, 1fr);
   }
   .document-preview {
     position: relative;
     top: auto;
-    height: 520px;
-    min-height: 0;
+    height: auto;
+    min-height: 180px;
     border-right: 0;
     border-bottom: var(--line);
   }
   .review-panel {
     max-height: none;
+  }
+  .detail-tabs {
+    overflow-x: auto;
   }
   .upload-workbench {
     grid-template-columns: 1fr;
@@ -2412,15 +2562,11 @@ time,
     align-items: flex-start;
     flex-direction: column;
   }
-  .model-controls {
+  .composer-model-controls {
     width: 100%;
   }
-  .model-controls label {
-    flex: 1;
-  }
-  .model-controls select {
-    min-width: 0;
-    width: 100%;
+  .composer-model-controls .ui-select {
+    flex: 1 1 0;
   }
   .chat-viewport {
     padding: 1rem;

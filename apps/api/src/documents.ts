@@ -668,7 +668,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     return context.json({ status: "ACTIVE", reindexJobs: publishedVersions.size });
   });
 
-  app.get("/audit", requireHr(), async (context) => {
+  app.get("/audit", authMiddleware(), requireHr(), async (context) => {
     const page = paginationSchema.parse(context.req.query());
     const events = await context.get("database").auditEvent.findMany({
       orderBy: { createdAt: "desc" },

@@ -1,4 +1,12 @@
-import { Button, ConfirmDialog, EmptyState, PageHeader, StatusStamp } from "@iom/ui";
+import {
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  PageHeader,
+  Select,
+  SelectOption,
+  StatusStamp,
+} from "@iom/ui";
 import { ArrowsLeftRight, Check, Play } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -89,16 +97,16 @@ function OverlapPage() {
         description="Semantic, lexical, dan metadata menemukan kandidat; model menjelaskan perubahan; HR menetapkan relasi."
         actions={
           <div className="inline-control">
-            <select value={candidate} onChange={(event) => setCandidate(event.target.value)}>
-              <option value="">Pilih draft</option>
+            <Select value={candidate} onChange={(event) => setCandidate(event.target.value)}>
+              <SelectOption value="">Pilih draft</SelectOption>
               {documents.versions
                 .filter((item) => ["IN_REVIEW", "READY_TO_PUBLISH"].includes(item.status))
                 .map((item) => (
-                  <option key={item.id} value={item.id}>
+                  <SelectOption key={item.id} value={item.id}>
                     {item.iomNumber} — {item.title}
-                  </option>
+                  </SelectOption>
                 ))}
-            </select>
+            </Select>
             <Button disabled={!candidate || busy} onClick={run}>
               <Play /> Analisis
             </Button>

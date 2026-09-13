@@ -1,14 +1,27 @@
-import { CheckCircle, WarningCircle, XCircle } from "@phosphor-icons/react";
+import { CaretDown, Check, CheckCircle, WarningCircle, XCircle } from "@phosphor-icons/react";
 import clsx from "clsx";
 import type {
   ButtonHTMLAttributes,
+  ChangeEvent,
   HTMLAttributes,
   InputHTMLAttributes,
+  OptionHTMLAttributes,
   ReactElement,
+  FocusEventHandler as ReactFocusEventHandler,
+  KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
+  SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
-import { cloneElement, isValidElement, useId } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 export function Button({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return <button className={clsx("ui-button", className)} {...props} />;
@@ -24,6 +37,262 @@ export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElem
 
 export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className={clsx("ui-textarea", className)} {...props} />;
+}
+
+export function SelectOption({ className, ...props }: OptionHTMLAttributes<HTMLOptionElement>) {
+  return <option className={clsx("ui-select__option", className)} {...props} />;
+}
+
+interface SelectEntry {
+  value: string;
+  children: ReactNode;
+}
+
+/**
+ * Accessible custom select: a trigger button opens a styled option list. The
+ * native select stays in the DOM (hidden) and is synced, so form submission
+ * via FormData/Field and controlled values keep working.
+ */
+export function Select({
+  className,
+  children,
+  value,
+  defaultValue,
+  onChange,
+  onBlur,
+  disabled,
+  required,
+  name,
+  id,
+  "aria-label": ariaLabel,
+  "aria-describedby": ariaDescribedBy,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement> & { children?: ReactNode }) {
+  const generatedId = useId();
+  const controlId = id ?? generatedId;
+  const listboxId = `${controlId}-listbox`;
+  const nativeRef = useRef<HTMLSelectElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [placement, setPlacement] = useState<"below" | "above">("below");
+  // Rendering with visibility:hidden makes the menu measurable before it is
+  // positioned, so the gap between trigger and option list stays tight.
+  const [positioned, setPositioned] = useState(false);
+
+  const rawOptions = Array.isArray(children)
+    ? children
+    : isValidElement(children)
+      ? [children]
+      : [];
+  const entries = rawOptions
+    .filter(isValidElement<{ value?: unknown; disabled?: boolean; children?: ReactNode }>)
+    .filter((option) => !option.props.disabled)
+    .map((option) => ({
+      value: String(option.props.value ?? ""),
+      children: option.props.children,
+    }));
+
+  const hasValueProp = "value" in props || value !== undefined;
+  const currentValue = hasValueProp ? String(value ?? "") : String(defaultValue ?? "");
+  const selectedIndex = Math.max(
+    0,
+    entries.findIndex((entry) => entry.value === currentValue),
+  );
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setActiveIndex(-1);
+    setAnchor(null);
+    setPlacement("below");
+    setPositioned(false);
+  }, []);
+
+  /**
+   * Puts the fixed-position menu below the trigger when there is room, or
+   * above it (flipped) when the dropdown would leave the viewport bottom.
+   * max-height caps both directions so the trigger is never covered.
+   */
+  const placeMenu = useCallback(() => {
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportBottom = window.innerHeight;
+    const menuHeight = Math.min(menu.getBoundingClientRect().height, 260);
+    const gap = 4;
+    const roomBelow = viewportBottom - rect.bottom - gap;
+    const roomAbove = rect.top - gap;
+    const flip = roomBelow < menuHeight && roomAbove > menuHeight * 0.4;
+    const top = flip ? Math.max(gap, rect.top - menuHeight - gap) : rect.bottom + gap;
+    setPlacement(flip ? "above" : "below");
+    setPositioned(true);
+    setAnchor({ top, left: rect.left, width: rect.width });
+  }, []);
+
+  function openMenu() {
+    setOpen(true);
+    // Measure after the hidden menu renders, then position and show it.
+    requestAnimationFrame(placeMenu);
+  }
+
+  // Keep the menu glued to the trigger while open: the thread can scroll and
+  // the window can resize, which would otherwise leave the fixed menu hanging
+  // in empty space or overflowing the viewport.
+  useEffect(() => {
+    if (!open) return;
+    const reposition = () => requestAnimationFrame(placeMenu);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, placeMenu]);
+
+  // Close when the user clicks anywhere outside the control.
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && rootRef.current?.contains(target)) return;
+      close();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open, close]);
+
+  function choose(entry: SelectEntry) {
+    const native = nativeRef.current;
+    if (native) native.value = entry.value;
+    if (onChange) {
+      // The native select keeps dispatching change; the handler reads
+      // event.target.value, so forward a matching change event.
+      const event = new Event("change", {
+        bubbles: true,
+      }) as unknown as ChangeEvent<HTMLSelectElement> & { target: HTMLSelectElement };
+      if (native) event.target = native;
+      onChange(event);
+    }
+    close();
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setActiveIndex(selectedIndex);
+      } else {
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        setActiveIndex((current) =>
+          Math.min(
+            entries.length - 1,
+            Math.max(0, (current < 0 ? selectedIndex : current) + delta),
+          ),
+        );
+      }
+      return;
+    }
+    if ((event.key === "Enter" || event.key === " ") && !open) {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex(selectedIndex);
+    }
+  }
+
+  function handleMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((current) =>
+        Math.min(entries.length - 1, Math.max(0, (current < 0 ? selectedIndex : current) + delta)),
+      );
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(event.key === "Home" ? 0 : entries.length - 1);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    }
+  }
+
+  return (
+    <div ref={rootRef} className={clsx("ui-select", className)}>
+      <select
+        ref={nativeRef}
+        className="ui-select__native"
+        name={name}
+        id={`${controlId}-native`}
+        required={required}
+        tabIndex={-1}
+        aria-hidden="true"
+        value={currentValue}
+      >
+        {children}
+      </select>
+      <button
+        ref={triggerRef}
+        id={controlId}
+        type="button"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listboxId}
+        aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        className="ui-select__trigger"
+        disabled={disabled}
+        onBlur={onBlur as ReactFocusEventHandler<HTMLButtonElement> | undefined}
+        onKeyDown={handleKeyDown}
+        onClick={() => (open ? close() : openMenu())}
+      >
+        <span className="ui-select__value">{entries[selectedIndex]?.children ?? ""}</span>
+        <CaretDown aria-hidden weight="bold" className="ui-select__chevron" />
+      </button>
+      {open && entries.length > 0 ? (
+        <div
+          ref={menuRef}
+          id={listboxId}
+          role="listbox"
+          tabIndex={-1}
+          className={clsx("ui-select__menu", `ui-select__menu--${placement}`)}
+          style={{
+            visibility: positioned ? "visible" : "hidden",
+            top: anchor ? `${anchor.top}px` : undefined,
+            left: anchor ? `${anchor.left}px` : undefined,
+            minWidth: anchor ? `${anchor.width}px` : undefined,
+          }}
+          onKeyDown={handleMenuKeyDown}
+        >
+          {entries.map((entry, index) => {
+            const selected = index === selectedIndex;
+            return (
+              <button
+                key={entry.value}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                data-active={activeIndex === index}
+                className="ui-select__option"
+                onClick={() => choose(entry)}
+                onMouseEnter={() => setActiveIndex(index)}
+              >
+                {selected ? <Check weight="bold" aria-hidden className="ui-select__check" /> : null}
+                {entry.children}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function Field(props: {

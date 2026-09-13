@@ -8,6 +8,7 @@ import {
   searchIomInputSchema,
   searchIomOutputSchema,
 } from "@iom/contracts";
+import { resolveModelApi } from "./catalog.js";
 import type { RetrievalScope, RetrievalService } from "./retrieval.js";
 
 export interface IomAgentScope extends RetrievalScope {
@@ -38,18 +39,27 @@ export function createIomAgent(options: {
   scope: IomAgentScope;
   reasoningEffort: ReasoningEffort;
 }) {
+  // Reasoning effort goes through provider options, not controls: the OpenAI
+  // adapter only declares the reasoningEffort control for known OpenAI model
+  // ids, so gateway-specific models (deepseek/gemini/glm) would be rejected
+  // up front. Responses models use the reasoning map; chat-completions models
+  // use the top-level reasoning_effort field, which the provider forwards.
+  const reasoningProviderOptions =
+    resolveModelApi(options.model.modelId) === "responses"
+      ? { reasoning: { effort: options.reasoningEffort, summary: "auto" } }
+      : { reasoning_effort: options.reasoningEffort };
   return new Agent({
     id: "iom-regulation-assistant",
     name: "Asisten Regulasi IOM",
     description: "Menjawab pertanyaan IOM berdasarkan bukti yang terotorisasi dan bertanggal.",
     model: options.model,
-    controls: { reasoningEffort: options.reasoningEffort },
     maxTurns: 4,
     toolChoice: "auto",
     // The search tool is the only tool. Parallel tool calls are disabled because
     // OpenAI may cancel one of its parallel function calls when reasoning is
     // high, which the Anvia adapter rejects as an invalid tool call.
     providerOptions: {
+      ...reasoningProviderOptions,
       parallel_tool_calls: false,
     },
     tools: [createSearchIomTool(options.retrieval, options.scope)],

@@ -11,8 +11,8 @@ import {
   createIomAgent,
   createOpenAIModel,
   createQdrantKnowledgeIndex,
-  modelCatalog,
   type RoleScopedKnowledgeIndex,
+  resolveCatalog,
   resolveModelSelection,
   StreamReleaseGuard,
 } from "@iom/agents";
@@ -228,6 +228,9 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
     apiKey: config.OPENAI_API_KEY,
     baseUrl: config.OPENAI_BASE_URL,
   });
+  // Deployment-specific gateways may expose different models. Resolve once so
+  // the catalog endpoint and stream validation agree on the same list.
+  const catalog = resolveCatalog(config.MODEL_CATALOG_OVERRIDE);
   let knowledgePromise:
     | Promise<{ index: RoleScopedKnowledgeIndex; close: () => Promise<void> }>
     | undefined;
@@ -249,8 +252,8 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
 
   app.get("/ai/models", (context) =>
     context.json({
-      models: modelCatalog,
-      defaults: { modelId: "gpt-5.6-luna", reasoningEffort: "none" },
+      models: catalog,
+      defaults: { modelId: catalog[0]?.id ?? "gpt-5.6-luna", reasoningEffort: "none" },
     }),
   );
 
@@ -269,7 +272,11 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
     const actor = context.get("actor");
     if (parsed.data.accessScope === "HR" && actor.role !== "HR_ADMIN")
       return context.json({ error: "Scope HR tidak tersedia." }, 403);
-    const selection = resolveModelSelection(parsed.data.modelId, parsed.data.reasoningEffort);
+    const selection = resolveModelSelection(
+      parsed.data.modelId,
+      parsed.data.reasoningEffort,
+      catalog,
+    );
     const policy = await context.get("database").confidentialityPolicy.findFirst({
       where: { status: "ACTIVE" },
       orderBy: { version: "desc" },
@@ -332,7 +339,11 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
         return context.json({ error: "Scope percakapan tidak dapat diubah." }, 409);
       if (conversation.accessScope === "HR" && actor.role !== "HR_ADMIN")
         return context.json({ error: "Scope HR tidak tersedia." }, 403);
-      const selection = resolveModelSelection(metadata.data.modelId, metadata.data.reasoningEffort);
+      const selection = resolveModelSelection(
+        metadata.data.modelId,
+        metadata.data.reasoningEffort,
+        catalog,
+      );
       const currentPolicy = await database.confidentialityPolicy.findFirst({
         where: { status: "ACTIVE" },
         orderBy: { version: "desc" },
@@ -346,7 +357,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
       const { index } = await knowledge(database);
       const accessScope = conversation.accessScope as AccessScope;
       const agent = createIomAgent({
-        model: createOpenAIModel(openai, selection.modelId),
+        model: createOpenAIModel(openai, selection.modelId, catalog),
         retrieval: index,
         reasoningEffort: selection.reasoningEffort,
         scope: {

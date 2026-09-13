@@ -12,6 +12,7 @@ import {
   ThreadPrimitive,
 } from "@anvia/react-ui";
 import type { ModelOption } from "@iom/contracts";
+import { Select, SelectOption } from "@iom/ui";
 import {
   ArrowDown,
   Brain,
@@ -20,7 +21,7 @@ import {
   PaperPlaneTilt,
   Stop,
 } from "@phosphor-icons/react";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "@/lib/api";
 import type { Conversation } from "@/lib/types";
 import { reconcileModelPreference } from "./model-preference";
@@ -121,6 +122,48 @@ export function ChatView(props: {
     initialPreference?.effort ?? props.conversation.reasoningEffort,
   );
   const latestRunFailedRef = useRef(false);
+  // The "Ke terbaru" action is a viewport-level affordance: it appears only
+  // while the newest content is out of view (scrolled up) and sits at the
+  // bottom center, above the composer. Auto-scroll during streaming keeps the
+  // newest delta visible, which also hides the action.
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [scrolledUp, setScrolledUp] = useState(false);
+  // Whether the user is "following" the bottom of the thread. Stays true while
+  // new content keeps the view pinned; flips false as soon as the user scrolls
+  // away and true again once they return to the bottom.
+  const followRef = useRef(true);
+  const updateScrollState = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    setScrolledUp(distance > 64);
+    if (followRef.current) {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: "auto" });
+    }
+  }, []);
+  const handleViewportScroll = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const distance = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    followRef.current = distance <= 64;
+    setScrolledUp(distance > 64);
+  }, []);
+  const scrollToBottom = () => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    // Instant, not smooth: while content is still streaming, a smooth
+    // animation never catches a moving bottom and the user feels stuck.
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: "auto" });
+    followRef.current = true;
+    setScrolledUp(false);
+  };
+  // Track scroll state for the whole lifetime of the view (not only during
+  // streaming): after a run finishes the interval keeps the "Ke terbaru"
+  // affordance accurate instead of leaving a stale visibility state.
+  useEffect(() => {
+    const interval = setInterval(updateScrollState, 400);
+    return () => clearInterval(interval);
+  }, [updateScrollState]);
   const model = props.models.find((item) => item.id === modelId) ?? props.models[0];
   const metadata = useMemo(
     () => ({
@@ -194,48 +237,14 @@ export function ChatView(props: {
             </span>
             <h1>{props.conversation.title}</h1>
           </div>
-          <div className="model-controls">
-            <label>
-              Model
-              <select
-                value={modelId}
-                disabled={isRunning}
-                onChange={(event) => {
-                  const preference = reconcileModelPreference(
-                    props.models,
-                    event.target.value,
-                    effort,
-                  );
-                  if (!preference) return;
-                  setModelId(preference.model.id);
-                  setEffort(preference.effort);
-                }}
-              >
-                {props.models.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Reasoning
-              <select
-                value={effort}
-                disabled={isRunning}
-                onChange={(event) => setEffort(event.target.value)}
-              >
-                {model?.supportedReasoningEfforts.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
         </header>
         <ThreadPrimitive.Root className="chat-thread">
-          <ThreadPrimitive.Viewport className="chat-viewport">
+          <ThreadPrimitive.Viewport
+            className="chat-viewport"
+            ref={viewportRef}
+            onScroll={handleViewportScroll}
+            autoScroll={false}
+          >
             <ThreadPrimitive.Empty className="chat-empty">
               <span className="chat-empty__index">IOM / ASK</span>
               <h2>
@@ -286,13 +295,15 @@ export function ChatView(props: {
                   ? "Jawaban sedang dialirkan..."
                   : status === "submitted"
                     ? "Menyiapkan pencarian..."
-                    : null
+                    : ""
               }
             </ThreadPrimitive.Status>
             <ThreadPrimitive.Error className="chat-error" />
-            <ThreadPrimitive.ScrollToBottom className="scroll-bottom">
-              <ArrowDown /> Ke terbaru
-            </ThreadPrimitive.ScrollToBottom>
+            {scrolledUp ? (
+              <ThreadPrimitive.ScrollToBottom className="scroll-bottom" onClick={scrollToBottom}>
+                <ArrowDown /> Ke terbaru
+              </ThreadPrimitive.ScrollToBottom>
+            ) : null}
           </ThreadPrimitive.Viewport>
           <ComposerPrimitive.Root
             className="chat-composer"
@@ -309,9 +320,41 @@ export function ChatView(props: {
               aria-label="Pesan"
             />
             <div className="chat-composer__footer">
-              <span>
-                {model?.label} / {effort}
-              </span>
+              <div className="composer-model-controls">
+                <Select
+                  aria-label="Model"
+                  value={modelId}
+                  disabled={isRunning}
+                  onChange={(event) => {
+                    const preference = reconcileModelPreference(
+                      props.models,
+                      event.target.value,
+                      effort,
+                    );
+                    if (!preference) return;
+                    setModelId(preference.model.id);
+                    setEffort(preference.effort);
+                  }}
+                >
+                  {props.models.map((option) => (
+                    <SelectOption key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectOption>
+                  ))}
+                </Select>
+                <Select
+                  aria-label="Reasoning"
+                  value={effort}
+                  disabled={isRunning}
+                  onChange={(event) => setEffort(event.target.value)}
+                >
+                  {model?.supportedReasoningEfforts.map((option) => (
+                    <SelectOption key={option} value={option}>
+                      {option}
+                    </SelectOption>
+                  ))}
+                </Select>
+              </div>
               {isRunning ? (
                 <ComposerPrimitive.Stop className="composer-action composer-action--stop">
                   <Stop weight="fill" /> Hentikan

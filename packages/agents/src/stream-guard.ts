@@ -18,7 +18,7 @@ export class StreamReleaseGuard {
   #buffer = "";
   #blocked = false;
 
-  constructor(fingerprints: readonly DeniedFingerprint[], releaseCharacters = 96) {
+  constructor(fingerprints: readonly DeniedFingerprint[], releaseCharacters = 48) {
     this.#denied = fingerprints
       .map((item) => comparable(item.value))
       .filter((item) => item.length >= 8);
