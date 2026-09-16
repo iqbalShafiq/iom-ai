@@ -83,7 +83,7 @@ function ChatPreview() {
 
 function UploadPreview() {
   return (
-    <PreviewFrame eyebrow="INGESTION / BATCH" title="Upload batches">
+    <PreviewFrame eyebrow="INGESTION / BATCH" title="Upload">
       <div className="mini-upload">
         <div className="mini-dropzone">
           <FileArrowUp weight="bold" />
@@ -361,8 +361,8 @@ function LoginPage() {
         <form className="login-form" onSubmit={submit}>
           <header>
             <span className="section-index">AKSES INTERNAL</span>
-            <h1>Masuk ke ruang kerja</h1>
-            <p>Gunakan akun yang dibuat oleh administrator.</p>
+            <h1>Masuk</h1>
+            <p>Gunakan akun internal</p>
           </header>
           <Field label="Email kantor">
             <Input

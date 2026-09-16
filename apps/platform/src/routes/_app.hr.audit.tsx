@@ -28,13 +28,10 @@ function AuditPage() {
       <PageHeader
         eyebrow="APPEND ONLY / SAFE METADATA"
         title="Audit log"
-        description="Jejak actor, action, model, policy, dan hasil tanpa menyalin payload confidential ke log generik."
+        description="Jejak aktivitas sensitif"
       />
       {events.length === 0 ? (
-        <EmptyState
-          title="Belum ada audit event"
-          description="Aktivitas sensitif dan keputusan HR akan tercatat di sini."
-        />
+        <EmptyState title="Belum ada aktivitas" description="Keputusan HR tercatat" />
       ) : (
         <ol className="audit-timeline">
           {events.map((event) => (

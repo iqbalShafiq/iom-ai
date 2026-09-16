@@ -47,7 +47,7 @@ function ChatLanding() {
       <PageHeader
         eyebrow="KNOWLEDGE / CHAT"
         title="Chat regulasi"
-        description="Setiap jawaban ditelusuri ke IOM yang sesuai scope dan tanggal."
+        description="Jawaban berbasis IOM"
         actions={
           <div className="header-action-group">
             <Button disabled={busy} onClick={() => create("EMPLOYEE")}>
@@ -62,10 +62,7 @@ function ChatLanding() {
         }
       />
       {conversations.length === 0 ? (
-        <EmptyState
-          title="Belum ada percakapan"
-          description="Mulai dari pertanyaan yang benar-benar Anda perlukan."
-        />
+        <EmptyState title="Belum ada chat" description="Mulai percakapan baru" />
       ) : (
         <div className="conversation-list">
           {conversations.map((conversation, index) => (

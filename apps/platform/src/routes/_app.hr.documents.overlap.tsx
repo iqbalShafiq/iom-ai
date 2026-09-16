@@ -35,7 +35,7 @@ interface OverlapRun {
   }>;
 }
 
-export const Route = createFileRoute("/_app/hr/overlap")({
+export const Route = createFileRoute("/_app/hr/documents/overlap")({
   loader: async () => {
     const [overlap, documents] = await Promise.all([
       apiFetch<{ runs: OverlapRun[] }>("/overlap/runs"),
@@ -93,8 +93,8 @@ function OverlapPage() {
     <div className="page-stack">
       <PageHeader
         eyebrow="HYBRID SEARCH / HUMAN DECISION"
-        title="Overlap analysis"
-        description="Semantic, lexical, dan metadata menemukan kandidat; model menjelaskan perubahan; HR menetapkan relasi."
+        title="Analisis overlap"
+        description="Bandingkan aturan terkait"
         actions={
           <div className="inline-control">
             <Select value={candidate} onChange={(event) => setCandidate(event.target.value)}>
@@ -114,10 +114,7 @@ function OverlapPage() {
         }
       />
       {overlap.runs.length === 0 ? (
-        <EmptyState
-          title="Belum ada analisis"
-          description="Pilih draft IOM untuk mencari regulasi bermakna serupa."
-        />
+        <EmptyState title="Belum ada analisis" description="Pilih draft IOM" />
       ) : (
         <div className="overlap-runs">
           {overlap.runs.map((run) => (

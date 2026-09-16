@@ -4,7 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { apiFetch } from "@/lib/api";
 import type { IomVersionRow } from "@/lib/types";
 
-export const Route = createFileRoute("/_app/hr/reviews")({
+export const Route = createFileRoute("/_app/hr/documents/confidentiality")({
   loader: () => apiFetch<{ versions: IomVersionRow[] }>("/iom"),
   component: ReviewsPage,
 });
@@ -17,14 +17,11 @@ function ReviewsPage() {
     <div className="page-stack">
       <PageHeader
         eyebrow="CONFIDENTIALITY / REVIEW"
-        title="Keputusan yang membutuhkan manusia"
-        description="High-confidence dapat diperiksa cepat; konflik dan confidence rendah tetap individual."
+        title="Review kerahasiaan"
+        description="Keputusan wajib HR"
       />
       {pending.length === 0 ? (
-        <EmptyState
-          title="Antrean review bersih"
-          description="Tidak ada dokumen dengan keputusan yang belum diselesaikan."
-        />
+        <EmptyState title="Antrean sudah bersih" description="Semua keputusan selesai" />
       ) : (
         <div className="review-list">
           {pending.map((version) => (

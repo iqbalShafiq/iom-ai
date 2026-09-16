@@ -6,7 +6,7 @@ import { useUploadManager } from "@/features/upload-manager";
 import { apiFetch } from "@/lib/api";
 import type { UploadBatchRow } from "@/lib/types";
 
-export const Route = createFileRoute("/_app/hr/uploads")({
+export const Route = createFileRoute("/_app/hr/documents/upload")({
   loader: () => apiFetch<{ batches: UploadBatchRow[] }>("/uploads/batches"),
   component: UploadsPage,
 });
@@ -63,8 +63,8 @@ function UploadsPage() {
     <div className="page-stack">
       <PageHeader
         eyebrow="INGESTION / BATCH"
-        title="Upload batches"
-        description="Hingga 500 file per batch. PDF scan akan dialihkan ke OCR lokal secara otomatis."
+        title="Upload dokumen"
+        description="Proses unggahan massal"
       />
       <form className="upload-workbench" onSubmit={submit}>
         <button
@@ -122,7 +122,7 @@ function UploadsPage() {
             <span>LIVE</span>
             <div>
               <h2>Upload aktif</h2>
-              <p>Antrean ini tetap hidup selama Anda bekerja di aplikasi.</p>
+              <p>Tetap aktif antarlaman</p>
             </div>
           </div>
           <div className="upload-queue">
@@ -144,7 +144,7 @@ function UploadsPage() {
           <span>HISTORY</span>
           <div>
             <h2>Batch tersimpan</h2>
-            <p>Status server akan tetap tersedia setelah refresh.</p>
+            <p>Tersimpan setelah refresh</p>
           </div>
         </div>
         <div className="batch-history">

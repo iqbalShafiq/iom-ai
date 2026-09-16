@@ -235,7 +235,7 @@ export function ChatView(props: {
             <span className="scope-stamp">
               {props.conversation.accessScope === "HR" ? "HR SCOPE" : "EMPLOYEE SAFE"}
             </span>
-            <h1>{props.conversation.title}</h1>
+            <h1>Percakapan IOM</h1>
           </div>
         </header>
         <ThreadPrimitive.Root className="chat-thread">
@@ -247,12 +247,8 @@ export function ChatView(props: {
           >
             <ThreadPrimitive.Empty className="chat-empty">
               <span className="chat-empty__index">IOM / ASK</span>
-              <h2>
-                Tanyakan aturan.
-                <br />
-                Kami cari buktinya.
-              </h2>
-              <p>Jawaban hanya memakai IOM yang aktif dan sesuai ruang akses percakapan ini.</p>
+              <h2>Tanyakan aturan IOM</h2>
+              <p>Bukti sesuai akses.</p>
               <ThreadPrimitive.Suggestions className="suggestion-list">
                 {(suggestion) => (
                   <ThreadPrimitive.Suggestion suggestion={suggestion}>

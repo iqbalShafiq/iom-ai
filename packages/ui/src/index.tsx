@@ -235,6 +235,7 @@ export function Select({
         tabIndex={-1}
         aria-hidden="true"
         value={currentValue}
+        onChange={() => undefined}
       >
         {children}
       </select>

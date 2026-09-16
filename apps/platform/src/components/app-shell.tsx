@@ -15,14 +15,14 @@ import type { ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
 import type { User } from "@/lib/types";
 
-const hrNavigation = [
-  { to: "/hr", label: "Overview", icon: HouseLine },
-  { to: "/hr/documents", label: "Documents", icon: Files },
-  { to: "/hr/uploads", label: "Upload batches", icon: UploadSimple },
-  { to: "/hr/reviews", label: "Confidentiality", icon: ListChecks },
-  { to: "/hr/overlap", label: "Overlap", icon: CirclesThreePlus },
-  { to: "/hr/audit", label: "Audit log", icon: Archive },
-  { to: "/hr/settings", label: "Settings", icon: Gear },
+const documentNavigation = [
+  { to: "/hr/documents/upload", label: "Upload", icon: UploadSimple },
+  {
+    to: "/hr/documents/confidentiality",
+    label: "Confidentiality",
+    icon: ListChecks,
+  },
+  { to: "/hr/documents/overlap", label: "Overlap", icon: CirclesThreePlus },
 ] as const;
 
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
@@ -45,18 +45,35 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
           <Link to="/chat" activeProps={{ "data-active": true }}>
             <ChatCircleDots weight="bold" /> Chat regulasi
           </Link>
-          {user.role === "HR_ADMIN"
-            ? hrNavigation.map((item) => (
+          {user.role === "HR_ADMIN" ? (
+            <>
+              <Link to="/hr" activeOptions={{ exact: true }} activeProps={{ "data-active": true }}>
+                <HouseLine weight="bold" /> Overview
+              </Link>
+              <div className="sidebar-nav-group">
                 <Link
-                  key={item.to}
-                  to={item.to}
-                  activeOptions={{ exact: item.to === "/hr" }}
+                  to="/hr/documents"
+                  activeOptions={{ exact: true }}
                   activeProps={{ "data-active": true }}
                 >
-                  <item.icon weight="bold" /> {item.label}
+                  <Files weight="bold" /> Documents
                 </Link>
-              ))
-            : null}
+                <div className="sidebar-subnav">
+                  {documentNavigation.map((item) => (
+                    <Link key={item.to} to={item.to} activeProps={{ "data-active": true }}>
+                      <item.icon weight="bold" /> {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+              <Link to="/hr/audit" activeProps={{ "data-active": true }}>
+                <Archive weight="bold" /> Audit log
+              </Link>
+              <Link to="/hr/settings" activeProps={{ "data-active": true }}>
+                <Gear weight="bold" /> Settings
+              </Link>
+            </>
+          ) : null}
         </nav>
         <footer>
           <div className="user-tile">

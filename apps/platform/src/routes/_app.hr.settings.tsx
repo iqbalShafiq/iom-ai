@@ -61,16 +61,16 @@ function SettingsPage() {
     <div className="page-stack">
       <PageHeader
         eyebrow="CONFIDENTIALITY / VERSIONED POLICY"
-        title="Settings"
-        description="Tuliskan batas kerahasiaan dalam bahasa natural. Draft selalu dievaluasi sebelum mengganti corpus aktif."
+        title="Pengaturan"
+        description="Kelola kebijakan akses"
       />
       <div className="settings-grid">
         <form className="policy-editor" onSubmit={create}>
           <div className="section-heading">
             <span>NEW</span>
             <div>
-              <h2>Draft policy</h2>
-              <p>Tidak langsung mengubah production corpus.</p>
+              <h2>Draft kebijakan</h2>
+              <p>Belum mengubah corpus</p>
             </div>
           </div>
           <Field label="Nama policy">
@@ -101,15 +101,12 @@ function SettingsPage() {
           <div className="section-heading">
             <span>VERSIONS</span>
             <div>
-              <h2>Riwayat policy</h2>
-              <p>Semua versi dipertahankan untuk audit.</p>
+              <h2>Riwayat kebijakan</h2>
+              <p>Semua versi tersimpan</p>
             </div>
           </div>
           {policies.length === 0 ? (
-            <EmptyState
-              title="Belum ada policy"
-              description="Buat policy pertama sebelum memulai chat atau publish."
-            />
+            <EmptyState title="Belum ada kebijakan" description="Buat kebijakan pertama" />
           ) : (
             policies.map((policy) => (
               <article key={policy.id}>

@@ -186,8 +186,8 @@ function DocumentDetail() {
     <div className="page-stack document-detail">
       <PageHeader
         eyebrow={`${version.iomNumber} / REVISION ${version.revision}`}
-        title={version.title}
-        description="Review evidence, tetapkan visibility, lalu publish saat tidak ada keputusan tersisa."
+        title="Detail dokumen"
+        description="Review dan publikasi"
         actions={
           <div className="header-action-group">
             <StatusStamp status={version.status} />
@@ -200,6 +200,9 @@ function DocumentDetail() {
         }
       />
       <div className="version-strip">
+        <span title={version.title}>
+          <FilePdf /> {version.title}
+        </span>
         <span>
           <Calendar /> Efektif{" "}
           {new Date(version.effectiveFrom).toLocaleDateString("id-ID", { dateStyle: "long" })}

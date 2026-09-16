@@ -28,18 +28,18 @@ function HrOverview() {
     <div className="page-stack">
       <PageHeader
         eyebrow="HR OPERATIONS / LIVE"
-        title="Selamat datang di meja kendali IOM."
-        description="Prioritas operasional, bukan angka hiasan. Semua data berasal dari status sistem saat ini."
+        title="Kendali IOM"
+        description="Prioritas operasional terkini"
       />
       <div className="operations-board">
         <section className="operations-main">
           <div className="section-heading">
             <span>01</span>
             <div>
-              <h2>Batch yang sedang berjalan</h2>
-              <p>Upload tetap diproses saat Anda berpindah halaman.</p>
+              <h2>Upload berjalan</h2>
+              <p>Tetap diproses otomatis</p>
             </div>
-            <Link to="/hr/uploads">
+            <Link to="/hr/documents/upload">
               Buka semua <ArrowRight />
             </Link>
           </div>
@@ -70,9 +70,9 @@ function HrOverview() {
             <span>02</span>
             <div>
               <h2>Antrean review</h2>
-              <p>Conflict dan confidence rendah selalu diperiksa individual.</p>
+              <p>Periksa konflik individual</p>
             </div>
-            <Link to="/hr/reviews">
+            <Link to="/hr/documents/confidentiality">
               Tinjau <ArrowRight />
             </Link>
           </div>

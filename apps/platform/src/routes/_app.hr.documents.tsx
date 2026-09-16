@@ -17,10 +17,10 @@ function DocumentsPage() {
     <div className="page-stack">
       <PageHeader
         eyebrow="CORPUS / ALL VERSIONS"
-        title="Documents"
-        description="Satu identitas IOM dapat memiliki beberapa revision dan status temporal."
+        title="Dokumen IOM"
+        description="Riwayat seluruh versi"
         actions={
-          <Link to="/hr/uploads">
+          <Link to="/hr/documents/upload">
             <Button>
               <UploadSimple /> Upload IOM
             </Button>
@@ -28,10 +28,7 @@ function DocumentsPage() {
         }
       />
       {versions.length === 0 ? (
-        <EmptyState
-          title="Corpus masih kosong"
-          description="Dokumen yang diunggah akan muncul setelah worker membuat version record."
-        />
+        <EmptyState title="Belum ada dokumen" description="Upload IOM pertama" />
       ) : (
         <div className="data-table">
           <div className="data-table__head">
