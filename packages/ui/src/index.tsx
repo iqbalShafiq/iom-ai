@@ -66,7 +66,6 @@ export function Select({
   id,
   "aria-label": ariaLabel,
   "aria-describedby": ariaDescribedBy,
-  ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & { children?: ReactNode }) {
   const generatedId = useId();
   const controlId = id ?? generatedId;
@@ -96,8 +95,11 @@ export function Select({
       children: option.props.children,
     }));
 
-  const hasValueProp = "value" in props || value !== undefined;
-  const currentValue = hasValueProp ? String(value ?? "") : String(defaultValue ?? "");
+  const isControlled = value !== undefined;
+  const [uncontrolledValue, setUncontrolledValue] = useState(() =>
+    String(defaultValue ?? entries[0]?.value ?? ""),
+  );
+  const currentValue = isControlled ? String(value) : uncontrolledValue;
   const selectedIndex = Math.max(
     0,
     entries.findIndex((entry) => entry.value === currentValue),
@@ -135,6 +137,7 @@ export function Select({
 
   function openMenu() {
     setOpen(true);
+    setActiveIndex(selectedIndex);
     // Measure after the hidden menu renders, then position and show it.
     requestAnimationFrame(placeMenu);
   }
@@ -165,27 +168,25 @@ export function Select({
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open, close]);
 
+  function handleNativeChange(event: ChangeEvent<HTMLSelectElement>) {
+    if (!isControlled) setUncontrolledValue(event.target.value);
+    onChange?.(event);
+  }
+
   function choose(entry: SelectEntry) {
     const native = nativeRef.current;
-    if (native) native.value = entry.value;
-    if (onChange) {
-      // The native select keeps dispatching change; the handler reads
-      // event.target.value, so forward a matching change event.
-      const event = new Event("change", {
-        bubbles: true,
-      }) as unknown as ChangeEvent<HTMLSelectElement> & { target: HTMLSelectElement };
-      if (native) event.target = native;
-      onChange(event);
-    }
+    if (!native) return;
+    native.value = entry.value;
+    native.dispatchEvent(new Event("change", { bubbles: true }));
     close();
+    requestAnimationFrame(() => triggerRef.current?.focus());
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!open) {
-        setOpen(true);
-        setActiveIndex(selectedIndex);
+        openMenu();
       } else {
         const delta = event.key === "ArrowDown" ? 1 : -1;
         setActiveIndex((current) =>
@@ -197,10 +198,24 @@ export function Select({
       }
       return;
     }
-    if ((event.key === "Enter" || event.key === " ") && !open) {
+    if (open && (event.key === "Home" || event.key === "End")) {
       event.preventDefault();
-      setOpen(true);
-      setActiveIndex(selectedIndex);
+      setActiveIndex(event.key === "Home" ? 0 : entries.length - 1);
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!open) {
+        openMenu();
+        return;
+      }
+      const entry = entries[activeIndex >= 0 ? activeIndex : selectedIndex];
+      if (entry) choose(entry);
+      return;
+    }
+    if (event.key === "Escape" && open) {
+      event.preventDefault();
+      close();
     }
   }
 
@@ -234,8 +249,8 @@ export function Select({
         required={required}
         tabIndex={-1}
         aria-hidden="true"
-        value={currentValue}
-        onChange={() => undefined}
+        {...(isControlled ? { value: currentValue } : { defaultValue: currentValue })}
+        onChange={handleNativeChange}
       >
         {children}
       </select>
@@ -246,6 +261,9 @@ export function Select({
         role="combobox"
         aria-expanded={open}
         aria-controls={listboxId}
+        aria-activedescendant={
+          open && activeIndex >= 0 ? `${listboxId}-option-${activeIndex}` : undefined
+        }
         aria-label={ariaLabel}
         aria-describedby={ariaDescribedBy}
         className="ui-select__trigger"
@@ -277,6 +295,7 @@ export function Select({
             return (
               <button
                 key={entry.value}
+                id={`${listboxId}-option-${index}`}
                 type="button"
                 role="option"
                 aria-selected={selected}
