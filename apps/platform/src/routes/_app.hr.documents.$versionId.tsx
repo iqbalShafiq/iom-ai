@@ -94,6 +94,8 @@ function DocumentDetail() {
   const [relationType, setRelationType] = useState("REPLACES");
   const [activeTab, setActiveTab] = useState<DetailTab>("review");
   const unresolved = version.chunks?.filter((chunk) => chunk.visibility === "NEEDS_REVIEW") ?? [];
+  const hasUnreviewedDecisions =
+    version.chunks?.some((chunk) => !chunk.decisions[0]?.reviewedAt) ?? false;
   const decisionCount = Object.keys(choices).length;
 
   async function saveReview() {
@@ -266,7 +268,9 @@ function DocumentDetail() {
                 <span>AI + HR REVIEW</span>
                 <strong>{version.chunks?.length ?? 0} chunks</strong>
               </div>
-              {version.status === "IN_REVIEW" && unresolved.length === 0 ? (
+              {version.status === "IN_REVIEW" &&
+              unresolved.length === 0 &&
+              hasUnreviewedDecisions ? (
                 <div className="ai-rationale">
                   <strong>Persetujuan HR diperlukan</strong>
                   <p>

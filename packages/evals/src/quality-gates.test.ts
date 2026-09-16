@@ -1,6 +1,7 @@
 import { StreamReleaseGuard } from "@iom/agents/stream-guard";
+import { assessPublishReadiness } from "@iom/database/readiness";
 import { describe, expect, it } from "vitest";
-import { safetyCases } from "./security-cases";
+import { publishSafetyCases, safetyCases } from "./security-cases";
 
 function citationsAreAuthorized(citations: string[], authorizedIds: Set<string>) {
   return citations.length > 0 && citations.every((id) => authorizedIds.has(id));
@@ -48,5 +49,48 @@ describe("versioned security corpus", () => {
     expect(
       overlapNeedsManualReview({ confidence: 0.94, hasConflict: false, hasProvenance: true }),
     ).toBe(false);
+  });
+
+  it("enforces every versioned publish-safety case", () => {
+    const confirmedAt = new Date("2026-09-16T00:00:00.000Z");
+    for (const item of publishSafetyCases) {
+      const input = {
+        metadataConfirmedAt: confirmedAt,
+        policyStatus: "ACTIVE",
+        chunks: [{ visibility: "EMPLOYEE_SAFE", reviewedAt: confirmedAt as Date | null }],
+        overlapRun: {
+          status: "COMPLETED",
+          createdAt: new Date(confirmedAt.getTime() + 1),
+          matches: [] as Array<{
+            existingVersionId: string;
+            decisionId: string | null;
+            decision: string | null;
+          }>,
+        },
+        relations: [] as Array<{
+          targetVersionId: string;
+          type: string;
+          overlapDecisionId: string | null;
+        }>,
+      };
+      if (item.mutation === "UNREVIEWED_CONFIDENTIALITY") {
+        const firstChunk = input.chunks[0];
+        if (firstChunk) firstChunk.reviewedAt = null;
+      }
+      if (item.mutation === "STALE_OVERLAP") {
+        input.overlapRun.createdAt = new Date(confirmedAt.getTime() - 1);
+      }
+      if (item.mutation === "MISSING_REPLACEMENT_RELATION") {
+        input.overlapRun.matches.push({
+          existingVersionId: "existing-version",
+          decisionId: "decision-1",
+          decision: "ARCHIVE_EXISTING",
+        });
+      }
+
+      const result = assessPublishReadiness(input);
+      expect(result.ready, item.id).toBe(item.expectedReady);
+      if (item.expectedReason) expect(result.reasons, item.id).toContain(item.expectedReason);
+    }
   });
 });

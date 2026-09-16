@@ -35,16 +35,20 @@ type EvidenceMetadata = {
   policyVersion: number;
 };
 
+type ReplaceableVectorStore = VectorStore<IomEvidence, EvidenceMetadata> & {
+  delete(options: { documentIds: string[] }): Promise<void>;
+};
+
 export class RoleScopedKnowledgeIndex implements RetrievalService {
   readonly #model: EmbeddingModel;
-  readonly #employeeStore: VectorStore<IomEvidence, EvidenceMetadata>;
-  readonly #hrStore: VectorStore<IomEvidence, EvidenceMetadata>;
+  readonly #employeeStore: ReplaceableVectorStore;
+  readonly #hrStore: ReplaceableVectorStore;
   readonly #authorizer: EvidenceAuthorizer;
 
   constructor(options: {
     model: EmbeddingModel;
-    employeeStore: VectorStore<IomEvidence, EvidenceMetadata>;
-    hrStore: VectorStore<IomEvidence, EvidenceMetadata>;
+    employeeStore: ReplaceableVectorStore;
+    hrStore: ReplaceableVectorStore;
     authorizer: EvidenceAuthorizer;
   }) {
     this.#model = options.model;
@@ -83,9 +87,16 @@ export class RoleScopedKnowledgeIndex implements RetrievalService {
       }),
       abortSignal: signal,
     });
+    const documentIds = evidence.map((item) => item.chunkId);
     await Promise.all([
-      this.#employeeStore.upsert({ documents: embeddedEmployee.documents }),
-      this.#hrStore.upsert({ documents: embeddedHr.documents }),
+      (async () => {
+        await this.#employeeStore.delete({ documentIds });
+        await this.#employeeStore.upsert({ documents: embeddedEmployee.documents });
+      })(),
+      (async () => {
+        await this.#hrStore.delete({ documentIds });
+        await this.#hrStore.upsert({ documents: embeddedHr.documents });
+      })(),
     ]);
   }
 

@@ -8,7 +8,6 @@ import {
   type LeasedJob,
   leaseNextJob,
 } from "@iom/database/jobs";
-import pLimit from "p-limit";
 
 export type JobHandler = (job: LeasedJob, signal: AbortSignal) => Promise<void>;
 
@@ -23,12 +22,10 @@ export interface WorkerRunnerOptions {
 export class WorkerRunner {
   readonly #id = randomUUID();
   readonly #options: WorkerRunnerOptions;
-  readonly #limit;
   readonly #controller = new AbortController();
 
   constructor(options: WorkerRunnerOptions) {
     this.#options = options;
-    this.#limit = pLimit(options.concurrency);
   }
 
   stop(): void {
@@ -37,6 +34,12 @@ export class WorkerRunner {
 
   async run(): Promise<void> {
     await this.#reconcileDeadLetters();
+    await Promise.all(
+      Array.from({ length: this.#options.concurrency }, (_, index) => this.#runSlot(index)),
+    );
+  }
+
+  async #runSlot(slot: number): Promise<void> {
     while (!this.#controller.signal.aborted) {
       const job = await leaseNextJob(this.#options.database, this.#id, this.#options.leaseSeconds);
       if (!job) {
@@ -45,12 +48,12 @@ export class WorkerRunner {
         }).catch(() => undefined);
         continue;
       }
-      void this.#limit(() => this.#process(job));
+      await this.#process(job, slot);
     }
-    await this.#limit.clearQueue();
   }
 
-  async #process(job: LeasedJob): Promise<void> {
+  async #process(job: LeasedJob, slot: number): Promise<void> {
+    const startedAt = Date.now();
     const handler = this.#options.handlers.get(job.type);
     if (!handler) {
       await failJob(this.#options.database, job, this.#id, "UNKNOWN_JOB_TYPE", false);
@@ -65,6 +68,16 @@ export class WorkerRunner {
     try {
       await handler(job, this.#controller.signal);
       await completeJob(this.#options.database, job.id, this.#id);
+      console.info(
+        JSON.stringify({
+          level: "info",
+          message: "Background job completed",
+          jobType: job.type,
+          attempt: job.attempts,
+          durationMs: Date.now() - startedAt,
+          slot,
+        }),
+      );
     } catch (error) {
       const jobError =
         error instanceof JobProcessingError ? error : new JobProcessingError("JOB_FAILED", true);
@@ -101,36 +114,57 @@ export class WorkerRunner {
 
   async #reconcileDeadLetters(): Promise<void> {
     const jobs = await this.#options.database.backgroundJob.findMany({
-      where: { status: "DEAD_LETTER", type: "INGEST_DOCUMENT" },
-      select: { payload: true, lastErrorCode: true },
+      where: {
+        status: "DEAD_LETTER",
+        type: { in: ["INGEST_DOCUMENT", "INDEX_VERSION", "ANALYZE_OVERLAP"] },
+      },
+      select: { type: true, payload: true, lastErrorCode: true },
     });
     for (const job of jobs) {
-      const uploadedFileId = (job.payload as Record<string, unknown>).uploadedFileId;
-      if (typeof uploadedFileId !== "string") continue;
-      await this.#options.database.uploadedFile.updateMany({
-        where: { id: uploadedFileId, stage: { notIn: ["COMPLETED", "FAILED"] } },
-        data: {
-          stage: "FAILED",
-          safeError: "Pemrosesan dokumen gagal. Periksa file lalu coba lagi.",
-          errorCode: job.lastErrorCode ?? "JOB_FAILED",
-        },
-      });
+      await this.#markPayloadFailed(
+        job.type,
+        job.payload as Record<string, unknown>,
+        job.lastErrorCode ?? "JOB_FAILED",
+      );
     }
   }
 
   async #markRelatedEntityFailed(job: LeasedJob, errorCode: string): Promise<void> {
-    const payload = job.payload as Record<string, unknown>;
-    if (job.type === "INGEST_DOCUMENT" && typeof payload.uploadedFileId === "string") {
+    await this.#markPayloadFailed(job.type, job.payload as Record<string, unknown>, errorCode);
+  }
+
+  async #markPayloadFailed(
+    jobType: string,
+    payload: Record<string, unknown>,
+    errorCode: string,
+  ): Promise<void> {
+    if (jobType === "INGEST_DOCUMENT" && typeof payload.uploadedFileId === "string") {
+      await this.#options.database.$transaction([
+        this.#options.database.uploadedFile.updateMany({
+          where: { id: payload.uploadedFileId, stage: { not: "COMPLETED" } },
+          data: {
+            stage: "FAILED",
+            safeError: "Pemrosesan dokumen gagal. Periksa file lalu coba lagi.",
+            errorCode,
+          },
+        }),
+        this.#options.database.iomVersion.updateMany({
+          where: { uploadedFileId: payload.uploadedFileId, status: "PROCESSING" },
+          data: { status: "FAILED" },
+        }),
+      ]);
+    }
+    if (jobType === "INDEX_VERSION" && typeof payload.versionId === "string") {
       await this.#options.database.uploadedFile.updateMany({
-        where: { id: payload.uploadedFileId, stage: { not: "COMPLETED" } },
+        where: { version: { id: payload.versionId }, stage: { not: "COMPLETED" } },
         data: {
           stage: "FAILED",
-          safeError: "Pemrosesan dokumen gagal. Periksa file lalu coba lagi.",
+          safeError: "IOM sudah dipublish, tetapi indexing gagal. Coba indexing lagi.",
           errorCode,
         },
       });
     }
-    if (job.type === "ANALYZE_OVERLAP" && typeof payload.runId === "string") {
+    if (jobType === "ANALYZE_OVERLAP" && typeof payload.runId === "string") {
       await this.#options.database.overlapRun.updateMany({
         where: { id: payload.runId, status: { not: "COMPLETED" } },
         data: { status: "FAILED", errorCode },

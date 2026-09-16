@@ -1,7 +1,7 @@
 import { Button, Field, PageHeader, ProgressBar, StatusStamp, Textarea } from "@iom/ui";
 import { FileArrowUp, Files, Warning } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { type DragEvent, type FormEvent, useRef, useState } from "react";
+import { type DragEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import { useUploadManager } from "@/features/upload-manager";
 import { apiFetch } from "@/lib/api";
 import type { UploadBatchRow } from "@/lib/types";
@@ -20,6 +20,14 @@ function UploadsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [retrying, setRetrying] = useState<string | null>(null);
+  useEffect(() => {
+    const hasActiveBatch = batches.some((batch) =>
+      batch.files.some((file) => !["REVIEWING", "COMPLETED", "FAILED"].includes(file.stage)),
+    );
+    if (!hasActiveBatch) return;
+    const timer = window.setInterval(() => void router.invalidate(), 2_000);
+    return () => window.clearInterval(timer);
+  }, [batches, router]);
   async function retry(fileId: string) {
     setRetrying(fileId);
     setError("");

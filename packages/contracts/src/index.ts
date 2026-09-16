@@ -187,6 +187,7 @@ export type OverlapMatch = z.infer<typeof overlapMatchSchema>;
 export const createUploadBatchSchema = z.object({
   note: z.string().trim().max(4_000).optional(),
   defaultConfidential: z.boolean().default(false),
+  expectedFiles: z.number().int().min(1).max(500),
 });
 
 export const createPolicySchema = z.object({

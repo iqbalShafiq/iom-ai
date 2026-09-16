@@ -29,4 +29,11 @@ describe("document chunking", () => {
     expect(chunks[0]?.text).not.toContain("Lampiran terbatas");
     expect(chunks[1]?.text).toContain("Lampiran terbatas untuk HR");
   });
+
+  it("bounds a single paragraph that is larger than the configured chunk size", () => {
+    const chunks = chunkPages([{ page: 1, text: "aturan ".repeat(100) }], "source", 80);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(chunks.every((chunk) => chunk.text.length <= 80)).toBe(true);
+  });
 });

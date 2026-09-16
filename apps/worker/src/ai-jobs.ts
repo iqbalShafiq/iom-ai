@@ -11,7 +11,9 @@ import {
 import type { ConfidentialityPolicy, IomEvidence } from "@iom/contracts";
 import type { Database } from "@iom/database";
 import type { LeasedJob } from "@iom/database/jobs";
+import { refreshIomPublishReadiness } from "@iom/database/readiness";
 import { JobProcessingError } from "./runner.js";
+import { runWithAiTimeout } from "./timeouts.js";
 
 type WorkerModelId = "gpt-5.6-luna" | "gpt-5.6-terra" | "gpt-5.6-sol" | "gpt-6-astra";
 
@@ -101,6 +103,7 @@ export function createPolicyEvaluationHandler(
   database: Database,
   openai: OpenAIClient,
   modelId: WorkerModelId,
+  aiTimeoutMs: number,
 ) {
   const classifier = createConfidentialityClassifier(createOpenAIModel(openai, modelId));
   return async (job: LeasedJob, signal: AbortSignal) => {
@@ -119,23 +122,25 @@ export function createPolicyEvaluationHandler(
       },
     });
     for (const chunk of chunks) {
-      const outcome = await classifyConfidentiality({
-        agent: classifier,
-        policy,
-        input: {
-          text: chunk.text,
-          ...(chunk.section ? { section: chunk.section } : {}),
-          ...(chunk.pageStart ? { page: chunk.pageStart } : {}),
-          ...(chunk.version.uploadedFile?.batch.note
-            ? { batchNote: chunk.version.uploadedFile.batch.note }
-            : {}),
-          manualMarkers: chunk.version.annotations.map((annotation) => ({
-            kind: annotation.kind,
-            ...(annotation.note ? { note: annotation.note } : {}),
-          })),
-        },
-        signal,
-      });
+      const outcome = await runWithAiTimeout(signal, aiTimeoutMs, (operationSignal) =>
+        classifyConfidentiality({
+          agent: classifier,
+          policy,
+          input: {
+            text: chunk.text,
+            ...(chunk.section ? { section: chunk.section } : {}),
+            ...(chunk.pageStart ? { page: chunk.pageStart } : {}),
+            ...(chunk.version.uploadedFile?.batch.note
+              ? { batchNote: chunk.version.uploadedFile.batch.note }
+              : {}),
+            manualMarkers: chunk.version.annotations.map((annotation) => ({
+              kind: annotation.kind,
+              ...(annotation.note ? { note: annotation.note } : {}),
+            })),
+          },
+          signal: operationSignal,
+        }),
+      );
       await database.confidentialityDecision.create({
         data: {
           chunkId: chunk.id,
@@ -158,6 +163,7 @@ export function createOverlapHandler(
   index: RoleScopedKnowledgeIndex,
   openai: OpenAIClient,
   modelId: WorkerModelId,
+  aiTimeoutMs: number,
 ) {
   const analyzer = createOverlapAnalyzer(createOpenAIModel(openai, modelId));
   return async (job: LeasedJob, signal: AbortSignal) => {
@@ -212,23 +218,32 @@ export function createOverlapHandler(
       lexical,
       metadata,
     ]).slice(0, 10);
+    const authorizedCandidates = await database.iomVersion.findMany({
+      where: {
+        id: { in: ranked.map((candidate) => candidate.id), not: run.candidateVersionId },
+        status: { in: ["PUBLISHED", "SUPERSEDED"] },
+      },
+      include: { chunks: { orderBy: { ordinal: "asc" }, take: 20 } },
+    });
+    const authorizedById = new Map(
+      authorizedCandidates.map((candidate) => [candidate.id, candidate]),
+    );
     for (const candidate of ranked) {
-      const existing = await database.iomVersion.findUnique({
-        where: { id: candidate.id },
-        include: { chunks: { orderBy: { ordinal: "asc" }, take: 20 } },
-      });
+      const existing = authorizedById.get(candidate.id);
       if (!existing) continue;
-      const match = await analyzeOverlap({
-        agent: analyzer,
-        candidateVersionId: run.candidateVersionId,
-        existingVersionId: existing.id,
-        candidateChunks: run.candidateVersion.chunks.map((chunk) => ({
-          id: chunk.id,
-          text: chunk.text,
-        })),
-        existingChunks: existing.chunks.map((chunk) => ({ id: chunk.id, text: chunk.text })),
-        signal,
-      });
+      const match = await runWithAiTimeout(signal, aiTimeoutMs, (operationSignal) =>
+        analyzeOverlap({
+          agent: analyzer,
+          candidateVersionId: run.candidateVersionId,
+          existingVersionId: existing.id,
+          candidateChunks: run.candidateVersion.chunks.map((chunk) => ({
+            id: chunk.id,
+            text: chunk.text,
+          })),
+          existingChunks: existing.chunks.map((chunk) => ({ id: chunk.id, text: chunk.text })),
+          signal: operationSignal,
+        }),
+      );
       const data = {
         recommendation: match.recommendation,
         confidence: match.confidence,
@@ -247,5 +262,6 @@ export function createOverlapHandler(
       where: { id: runId },
       data: { status: "COMPLETED", completedAt: new Date() },
     });
+    await refreshIomPublishReadiness(database, run.candidateVersionId);
   };
 }

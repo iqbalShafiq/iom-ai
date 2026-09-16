@@ -38,6 +38,7 @@ export interface IomVersionRow {
   status: string;
   effectiveFrom: string;
   effectiveUntil?: string | null;
+  metadataConfirmedAt?: string | null;
   document?: { id: string; stableKey: string };
   _count?: { chunks: number };
   chunks?: Array<{
@@ -51,6 +52,7 @@ export interface IomVersionRow {
     decisions: Array<{
       id: string;
       rationale: string;
+      reviewedAt?: string | null;
       categories: string[];
       sensitiveSpans: Array<{ start: number; end: number; reason: string }>;
     }>;

@@ -1,11 +1,12 @@
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 
 export interface FileStorage {
   put(key: string, source: NodeJS.ReadableStream): Promise<{ size: number }>;
   read(key: string): NodeJS.ReadableStream;
+  delete(key: string): Promise<void>;
   absolutePath(key: string): string;
 }
 
@@ -33,5 +34,9 @@ export class LocalFileStorage implements FileStorage {
 
   read(key: string): NodeJS.ReadableStream {
     return createReadStream(this.absolutePath(key));
+  }
+
+  async delete(key: string): Promise<void> {
+    await rm(this.absolutePath(key), { force: true });
   }
 }

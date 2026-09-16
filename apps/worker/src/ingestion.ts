@@ -1,8 +1,15 @@
 import type { ConfidentialityDecision, ConfidentialityPolicy } from "@iom/contracts";
 import type { Database } from "@iom/database";
 import type { LeasedJob } from "@iom/database/jobs";
-import { chunkPages, type FileStorage, parseDocument } from "@iom/documents";
+import {
+  chunkPages,
+  type FileStorage,
+  MAX_DOCUMENT_CHUNKS,
+  MAX_NORMALIZED_DOCUMENT_CHARACTERS,
+  parseDocument,
+} from "@iom/documents";
 import { JobProcessingError } from "./runner.js";
+import { runWithAiTimeout } from "./timeouts.js";
 
 interface IngestionPayload {
   uploadedFileId: string;
@@ -20,6 +27,7 @@ export function createIngestionHandler(
   storage: FileStorage,
   ocrLanguages: string,
   classifierModelId: string,
+  aiTimeoutMs: number,
   classify: (input: {
     policy: ConfidentialityPolicy;
     text: string;
@@ -40,7 +48,7 @@ export function createIngestionHandler(
 
     await database.uploadedFile.update({
       where: { id: uploaded.id },
-      data: { stage: "EXTRACTING", progress: 10, safeError: null, errorCode: null },
+      data: { stage: "EXTRACTING", progress: 50, safeError: null, errorCode: null },
     });
     const parsed = await parseDocument(
       storage.absolutePath(uploaded.storageKey),
@@ -48,13 +56,14 @@ export function createIngestionHandler(
       ocrLanguages,
     );
     if (signal.aborted) throw new JobProcessingError("WORKER_SHUTDOWN", true);
+    const textCharacters = parsed.pages.reduce((total, page) => total + page.text.length, 0);
+    if (textCharacters > MAX_NORMALIZED_DOCUMENT_CHARACTERS) {
+      throw new JobProcessingError("DOCUMENT_TEXT_LIMIT_EXCEEDED", false);
+    }
 
     const existingVersion = await database.iomVersion.findUnique({
       where: { uploadedFileId: uploaded.id },
     });
-    const document = existingVersion
-      ? await database.iomDocument.findUniqueOrThrow({ where: { id: existingVersion.documentId } })
-      : await database.iomDocument.create({ data: { stableKey: uploaded.sha256 } });
     const version = existingVersion
       ? await database.$transaction(async (transaction) => {
           // A manual retry restarts only an unpublished processing version. Stable chunk IDs and
@@ -63,20 +72,31 @@ export function createIngestionHandler(
           await transaction.iomAnnotation.deleteMany({ where: { versionId: existingVersion.id } });
           return transaction.iomVersion.update({
             where: { id: existingVersion.id },
-            data: { status: "PROCESSING", confidentialityPolicyId: null },
+            data: {
+              status: "PROCESSING",
+              confidentialityPolicyId: null,
+              reviewedById: null,
+              metadataConfirmedAt: null,
+              metadataConfirmedById: null,
+            },
           });
         })
-      : await database.iomVersion.create({
-          data: {
-            documentId: document.id,
-            uploadedFileId: uploaded.id,
-            iomNumber: uploaded.originalName.replace(/\.[^.]+$/, ""),
-            revision: 1,
-            title: uploaded.originalName.replace(/\.[^.]+$/, ""),
-            status: "PROCESSING",
-            effectiveFrom: new Date(),
-            sourceHash: uploaded.sha256,
-          },
+      : await database.$transaction(async (transaction) => {
+          const document = await transaction.iomDocument.create({
+            data: { stableKey: uploaded.sha256 },
+          });
+          return transaction.iomVersion.create({
+            data: {
+              documentId: document.id,
+              uploadedFileId: uploaded.id,
+              iomNumber: uploaded.originalName.replace(/\.[^.]+$/, ""),
+              revision: 1,
+              title: uploaded.originalName.replace(/\.[^.]+$/, ""),
+              status: "PROCESSING",
+              effectiveFrom: new Date(),
+              sourceHash: uploaded.sha256,
+            },
+          });
         });
     if (uploaded.batch.defaultConfidential || uploaded.batch.note) {
       await database.iomAnnotation.create({
@@ -89,6 +109,9 @@ export function createIngestionHandler(
       });
     }
     const chunks = chunkPages(parsed.pages, uploaded.sha256);
+    if (chunks.length > MAX_DOCUMENT_CHUNKS) {
+      throw new JobProcessingError("DOCUMENT_CHUNK_LIMIT_EXCEEDED", false);
+    }
     await database.iomChunk.createMany({
       data: chunks.map((chunk) => ({
         id: chunk.id,
@@ -104,7 +127,7 @@ export function createIngestionHandler(
       where: { id: uploaded.id },
       data: {
         stage: "CLASSIFYING",
-        progress: 55,
+        progress: 70,
         pageCount: parsed.pages.length,
         safeError: parsed.needsReview ? "OCR confidence rendah; dokumen wajib ditinjau." : null,
       },
@@ -121,7 +144,7 @@ export function createIngestionHandler(
           where: { id: uploaded.id },
           data: {
             stage: "REVIEWING",
-            progress: 70,
+            progress: 80,
             safeError: "Policy kerahasiaan aktif belum tersedia.",
           },
         }),
@@ -138,14 +161,16 @@ export function createIngestionHandler(
     };
     for (const chunk of chunks) {
       if (signal.aborted) throw new JobProcessingError("WORKER_SHUTDOWN", true);
-      const decision = await classify({
-        policy,
-        text: chunk.text,
-        page: chunk.pageStart,
-        ...(uploaded.batch.note ? { batchNote: uploaded.batch.note } : {}),
-        manualConfidential: uploaded.batch.defaultConfidential,
-        signal,
-      });
+      const decision = await runWithAiTimeout(signal, aiTimeoutMs, (operationSignal) =>
+        classify({
+          policy,
+          text: chunk.text,
+          page: chunk.pageStart,
+          ...(uploaded.batch.note ? { batchNote: uploaded.batch.note } : {}),
+          manualConfidential: uploaded.batch.defaultConfidential,
+          signal: operationSignal,
+        }),
+      );
       await database.$transaction([
         database.confidentialityDecision.create({
           data: {
@@ -177,7 +202,7 @@ export function createIngestionHandler(
       }),
       database.uploadedFile.update({
         where: { id: uploaded.id },
-        data: { stage: "REVIEWING", progress: 75 },
+        data: { stage: "REVIEWING", progress: 80 },
       }),
     ]);
   };

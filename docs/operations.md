@@ -28,6 +28,15 @@ lease kedaluwarsa akan diambil worker lain. Error transient diulang maksimal tig
 backoff. `DEAD_LETTER` tidak diulang otomatis: baca `lastErrorCode`, perbaiki akar masalah, lalu
 gunakan retry dari dashboard/API agar idempotency key tetap dipertahankan.
 
+Setiap slot worker hanya mengambil satu job dan langsung menjalankannya; job tidak boleh menunggu
+di antrean memory setelah lease diambil. `INGEST_DOCUMENT`, `INDEX_VERSION`, dan `ANALYZE_OVERLAP`
+yang terminal direkonsiliasi ke status user-facing saat startup. Kegagalan indexing tidak
+membatalkan status published: file menjadi `FAILED` dan retry hanya menjadwalkan indexing ulang,
+tanpa mengulang parsing/OCR/classification.
+
+`WORKER_AI_TIMEOUT_MS` membatasi satu operasi model. Naikkan hanya berdasarkan ukuran dokumen dan
+latency provider yang terukur; timeout tetap dianggap transient dan mengikuti bounded retry.
+
 ## Policy rollout
 
 Jangan mengaktifkan draft secara langsung. Jalankan impact analysis, selesaikan semua conflict dan
@@ -40,6 +49,10 @@ reauthorization PostgreSQL menolak vector generation lama.
 Backup PostgreSQL dan storage original sebagai satu recovery unit. Qdrant boleh dibangun ulang dari
 PostgreSQL/chunks dengan job indexing. Verifikasi checksum original setelah restore. AuditEvent
 append-only tidak boleh dipangkas tanpa retention policy formal.
+
+Migration `upload_pipeline_hardening` memeriksa duplicate SHA-256 sebelum membuat unique index dan
+akan gagal dengan pesan eksplisit bila data lama mengandung duplikat. Selesaikan duplikat melalui
+prosedur data-governance yang menjaga audit trail; jangan menghapus record otomatis.
 
 ## Incident kerahasiaan
 

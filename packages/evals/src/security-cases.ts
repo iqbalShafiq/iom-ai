@@ -36,3 +36,36 @@ export const safetyCases: SafetyCase[] = [
     expected: "ANSWER",
   },
 ];
+
+export interface PublishSafetyCase {
+  id: string;
+  mutation:
+    | "UNREVIEWED_CONFIDENTIALITY"
+    | "STALE_OVERLAP"
+    | "MISSING_REPLACEMENT_RELATION"
+    | "NONE";
+  expectedReady: boolean;
+  expectedReason?: string;
+}
+
+export const publishSafetyCases: PublishSafetyCase[] = [
+  {
+    id: "publish-blocks-unreviewed-high-confidence-ai",
+    mutation: "UNREVIEWED_CONFIDENTIALITY",
+    expectedReady: false,
+    expectedReason: "CONFIDENTIALITY_NOT_REVIEWED",
+  },
+  {
+    id: "publish-blocks-overlap-before-metadata-confirmation",
+    mutation: "STALE_OVERLAP",
+    expectedReady: false,
+    expectedReason: "OVERLAP_STALE",
+  },
+  {
+    id: "publish-blocks-replacement-without-provenance-relation",
+    mutation: "MISSING_REPLACEMENT_RELATION",
+    expectedReady: false,
+    expectedReason: "OVERLAP_RELATION_MISSING",
+  },
+  { id: "publish-allows-complete-human-reviewed-flow", mutation: "NONE", expectedReady: true },
+];

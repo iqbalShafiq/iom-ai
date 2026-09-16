@@ -50,8 +50,9 @@ function OverlapPage() {
   const { overlap, documents } = Route.useLoaderData();
   const router = useRouter();
   const [candidate, setCandidate] = useState(
-    documents.versions.find((item) => ["IN_REVIEW", "READY_TO_PUBLISH"].includes(item.status))
-      ?.id ?? "",
+    documents.versions.find(
+      (item) => ["IN_REVIEW", "READY_TO_PUBLISH"].includes(item.status) && item.metadataConfirmedAt,
+    )?.id ?? "",
   );
   const [busy, setBusy] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<{
@@ -100,7 +101,11 @@ function OverlapPage() {
             <Select value={candidate} onChange={(event) => setCandidate(event.target.value)}>
               <SelectOption value="">Pilih draft</SelectOption>
               {documents.versions
-                .filter((item) => ["IN_REVIEW", "READY_TO_PUBLISH"].includes(item.status))
+                .filter(
+                  (item) =>
+                    ["IN_REVIEW", "READY_TO_PUBLISH"].includes(item.status) &&
+                    item.metadataConfirmedAt,
+                )
                 .map((item) => (
                   <SelectOption key={item.id} value={item.id}>
                     {item.iomNumber} — {item.title}
@@ -211,7 +216,7 @@ function OverlapPage() {
       <ConfirmDialog
         open={pendingDecision !== null}
         title="Catat keputusan HR?"
-        description="Keputusan akan masuk ke audit log. Relasi dan lifecycle dokumen tetap dikonfirmasi terpisah."
+        description="Keputusan masuk ke audit log. Jika diterima sebagai pengganti atau pelengkap, relasi dokumen ikut dibuat; perubahan lifecycle baru terjadi saat publish dikonfirmasi."
         confirmLabel="Catat keputusan"
         busy={busy}
         onCancel={() => setPendingDecision(null)}

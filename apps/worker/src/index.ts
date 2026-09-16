@@ -50,6 +50,7 @@ const handlers = new Map([
       storage,
       config.OCR_LANGUAGES,
       config.CLASSIFIER_MODEL_ID,
+      config.WORKER_AI_TIMEOUT_MS,
       async (input) =>
         classifyConfidentiality({
           agent: classifier,
@@ -65,10 +66,24 @@ const handlers = new Map([
     ),
   ],
   ["INDEX_VERSION", createIndexVersionHandler(database, knowledge.index)],
-  ["EVALUATE_POLICY", createPolicyEvaluationHandler(database, openai, config.CLASSIFIER_MODEL_ID)],
+  [
+    "EVALUATE_POLICY",
+    createPolicyEvaluationHandler(
+      database,
+      openai,
+      config.CLASSIFIER_MODEL_ID,
+      config.WORKER_AI_TIMEOUT_MS,
+    ),
+  ],
   [
     "ANALYZE_OVERLAP",
-    createOverlapHandler(database, knowledge.index, openai, config.OVERLAP_MODEL_ID),
+    createOverlapHandler(
+      database,
+      knowledge.index,
+      openai,
+      config.OVERLAP_MODEL_ID,
+      config.WORKER_AI_TIMEOUT_MS,
+    ),
   ],
 ]);
 const runner = new WorkerRunner({

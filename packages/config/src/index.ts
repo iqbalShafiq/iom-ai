@@ -19,6 +19,7 @@ const serverSchema = z.object({
   MODEL_CACHE_ROOT: z.string().min(1).default("./models"),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(3),
   JOB_LEASE_SECONDS: z.coerce.number().int().min(15).max(600).default(60),
+  WORKER_AI_TIMEOUT_MS: z.coerce.number().int().min(30_000).max(600_000).default(120_000),
   OCR_LANGUAGES: z.string().default("ind+eng"),
   ANVIA_LENS_ENABLED: z
     .enum(["true", "false"])

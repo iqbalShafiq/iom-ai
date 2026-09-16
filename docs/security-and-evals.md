@@ -7,6 +7,12 @@
 - Employee tidak menerima existence signal, filename, source metadata, atau snippet HR-only.
 - Manual confidential marker tidak dapat diturunkan AI. Employee-safe marker hanya hint.
 - Generic logs dan Lens hanya menerima safe metadata.
+- Publish ditolak server bila metadata belum dikonfirmasi, policy tidak aktif, satu chunk belum
+  disetujui HR, overlap terbaru belum selesai, keputusan overlap masih manual/unset, atau relasi
+  lifecycle yang diwajibkan belum ada.
+- Kandidat semantic overlap diotorisasi ulang ke PostgreSQL sebelum text-nya mencapai model.
+- Reindex menghapus vector dengan chunk ID versi yang sama dari kedua collection sebelum upsert,
+  sehingga perubahan `EMPLOYEE_SAFE` menjadi `HR_ONLY` tidak meninggalkan vector employee lama.
 
 ## Dataset dan gates
 

@@ -14,6 +14,7 @@ const config = {
   MODEL_CACHE_ROOT: "./models-test",
   WORKER_CONCURRENCY: 1,
   JOB_LEASE_SECONDS: 60,
+  WORKER_AI_TIMEOUT_MS: 120_000,
   OCR_LANGUAGES: "ind+eng",
   ANVIA_LENS_ENABLED: false,
   CLASSIFIER_MODEL_ID: "gpt-5.6-sol",

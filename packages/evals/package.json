@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@iom/agents": "workspace:*",
-    "@iom/contracts": "workspace:*"
+    "@iom/contracts": "workspace:*",
+    "@iom/database": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "24.3.0"

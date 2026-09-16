@@ -15,8 +15,7 @@
     "@iom/config": "workspace:*",
     "@iom/contracts": "workspace:*",
     "@iom/database": "workspace:*",
-    "@iom/documents": "workspace:*",
-    "p-limit": "7.1.1"
+    "@iom/documents": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "24.3.0",

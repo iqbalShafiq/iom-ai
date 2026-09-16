@@ -326,7 +326,12 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
 
   app.post(
     "/chat/stream",
-    rateLimit({ limit: 30, windowMs: 60_000, keyPrefix: "chat" }),
+    rateLimit({
+      limit: 30,
+      windowMs: 60_000,
+      keyPrefix: "chat",
+      key: (context) => context.get("actor").id,
+    }),
     async (context) => {
       const rawRequest = await context.req.json().catch(() => null);
       let request: ReturnType<typeof parseClientStreamRequest>;
