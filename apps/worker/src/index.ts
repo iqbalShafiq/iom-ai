@@ -1,9 +1,9 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { OpenAIClient } from "@anvia/openai";
 import {
   classifyConfidentiality,
   createConfidentialityClassifier,
+  createIomOpenAIClient,
   createOpenAIModel,
   createQdrantKnowledgeIndex,
 } from "@iom/agents";
@@ -27,9 +27,9 @@ const config = {
 };
 const database = createDatabase(config.DATABASE_URL);
 const storage = new LocalFileStorage(config.STORAGE_ROOT);
-const openai = new OpenAIClient({
+const openai = createIomOpenAIClient({
   apiKey: config.OPENAI_API_KEY,
-  baseUrl: config.OPENAI_BASE_URL,
+  ...(config.OPENAI_BASE_URL === undefined ? {} : { baseUrl: config.OPENAI_BASE_URL }),
 });
 const classifier = createConfidentialityClassifier(
   createOpenAIModel(openai, config.CLASSIFIER_MODEL_ID),

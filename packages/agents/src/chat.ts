@@ -1,6 +1,6 @@
 import { Agent } from "@anvia/core/agent";
+import type { Message } from "@anvia/core/completion";
 import { createTool } from "@anvia/core/tool";
-import type { OpenAICompletionModel } from "@anvia/openai";
 import {
   type AccessScope,
   type ReasoningEffort,
@@ -8,7 +8,7 @@ import {
   searchIomInputSchema,
   searchIomOutputSchema,
 } from "@iom/contracts";
-import { resolveModelApi } from "./catalog.js";
+import { type IomOpenAIModel, openaiReasoning } from "./catalog.js";
 import type { RetrievalScope, RetrievalService } from "./retrieval.js";
 
 export interface IomAgentScope extends RetrievalScope {
@@ -33,21 +33,51 @@ function scopeInstruction(scope: AccessScope): string {
     : "Anda berada pada scope HR yang terotorisasi. Tetap batasi jawaban pada bukti yang dikembalikan tool.";
 }
 
+function textFromContent(content: unknown): string {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content
+    .flatMap((part) =>
+      typeof part === "object" &&
+      part !== null &&
+      "type" in part &&
+      part.type === "text" &&
+      "text" in part &&
+      typeof part.text === "string"
+        ? [part.text]
+        : [],
+    )
+    .join("\n")
+    .trim();
+}
+
+/**
+ * Replay only user/assistant text. Client history includes provider response
+ * ids, reasoning summaries, and incomplete tool parts that the Responses API
+ * and Anvia accumulator reject on the next turn.
+ */
+export function sanitizeIomChatHistory(messages: readonly Message[]): Message[] {
+  const sanitized: Message[] = [];
+  for (const message of messages) {
+    if (message.role !== "user" && message.role !== "assistant") continue;
+    const text = textFromContent(message.content);
+    if (!text) continue;
+    sanitized.push(
+      message.role === "user"
+        ? { role: "user", content: [{ type: "text", text }] }
+        : { role: "assistant", content: [{ type: "text", text }] },
+    );
+  }
+  return sanitized;
+}
+
 export function createIomAgent(options: {
-  model: OpenAICompletionModel;
+  model: IomOpenAIModel;
   retrieval: RetrievalService;
   scope: IomAgentScope;
   reasoningEffort: ReasoningEffort;
 }) {
-  // Reasoning effort goes through provider options, not controls: the OpenAI
-  // adapter only declares the reasoningEffort control for known OpenAI model
-  // ids, so gateway-specific models (deepseek/gemini/glm) would be rejected
-  // up front. Responses models use the reasoning map; chat-completions models
-  // use the top-level reasoning_effort field, which the provider forwards.
-  const reasoningProviderOptions =
-    resolveModelApi(options.model.modelId) === "responses"
-      ? { reasoning: { effort: options.reasoningEffort, summary: "auto" } }
-      : { reasoning_effort: options.reasoningEffort };
+  const reasoning = openaiReasoning(options.reasoningEffort);
   return new Agent({
     id: "iom-regulation-assistant",
     name: "Asisten Regulasi IOM",
@@ -55,13 +85,8 @@ export function createIomAgent(options: {
     model: options.model,
     maxTurns: 4,
     toolChoice: "auto",
-    // The search tool is the only tool. Parallel tool calls are disabled because
-    // OpenAI may cancel one of its parallel function calls when reasoning is
-    // high, which the Anvia adapter rejects as an invalid tool call.
-    providerOptions: {
-      ...reasoningProviderOptions,
-      parallel_tool_calls: false,
-    },
+    providerOptions: reasoning.providerOptions,
+    controls: reasoning.controls,
     tools: [createSearchIomTool(options.retrieval, options.scope)],
     instructions: `
 Anda adalah asisten regulasi IOM perusahaan. IOM adalah memo internal kantor.

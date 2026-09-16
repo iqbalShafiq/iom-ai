@@ -19,6 +19,7 @@
     "@anvia/core": "1.2.1",
     "@anvia/logger": "1.1.3",
     "@anvia/openai": "1.1.3",
+    "openai": "7.13.0",
     "@anvia/qdrant": "1.1.3",
     "@anvia/transformers": "1.1.3",
     "@iom/contracts": "workspace:*",

@@ -5,24 +5,26 @@ import {
   parseClientStreamRequest,
 } from "@anvia/client";
 import type { AgentStream, AgentStreamEvent } from "@anvia/core/agent";
-import { OpenAIClient } from "@anvia/openai";
 import { createClientStreamResponse } from "@anvia/server";
 import {
   createIomAgent,
+  createIomOpenAIClient,
   createOpenAIModel,
   createQdrantKnowledgeIndex,
   modelCatalog,
   type RoleScopedKnowledgeIndex,
   resolveModelSelection,
   StreamReleaseGuard,
+  sanitizeIomChatHistory,
 } from "@iom/agents";
 import type { ServerConfig } from "@iom/config";
-import { type AccessScope, chatRunMetadataSchema } from "@iom/contracts";
+import { type AccessScope, type ChatRunMetadata, chatRunMetadataSchema } from "@iom/contracts";
 import type { Database, Prisma } from "@iom/database";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { audit } from "./audit.js";
 import { authMiddleware } from "./auth.js";
+import { persistChatTranscript } from "./chat-transcript.js";
 import { PrismaEvidenceAuthorizer } from "./evidence.js";
 import { rateLimit } from "./rate-limit.js";
 import type { AppBindings } from "./types.js";
@@ -114,13 +116,20 @@ function isRetryableProviderOutputError(error: unknown): boolean {
   return typeof kind !== "string" || RETRYABLE_PROVIDER_OUTPUT_KINDS.has(kind);
 }
 
-// Runs the agent stream with retries. Reasoning and tool events are buffered
-// until the first answer text is released; a retryable provider error before
-// that point restarts the run silently, so the client never sees partial
-// reasoning from a discarded attempt. After text starts, the stream is live.
-// A failed attempt is cancelled before retrying so its in-flight provider
-// call cannot interleave with the replacement run. Only the confidentiality
-// guard also needs cancel: it throws after detecting blocked content.
+function isVisibleChatContent(event: AgentStreamEvent): boolean {
+  return (
+    event.type === "text_delta" ||
+    event.type === "reasoning_delta" ||
+    event.type === "tool_call_delta" ||
+    event.type === "tool_call"
+  );
+}
+
+// Stream reasoning, tool calls, and answer text as they arrive. Retry only
+// when a retryable provider error happens before any of those events so the
+// client never sees a discarded attempt. After the first visible event the
+// run is live. A failed attempt is cancelled before retrying so its
+// in-flight provider call cannot interleave with the replacement run.
 async function* runAgentWithRetries(options: {
   start: () => AgentStream;
   fingerprints: Awaited<ReturnType<typeof deniedFingerprints>>;
@@ -138,23 +147,11 @@ async function* runAgentWithRetries(options: {
         // Best effort: the run may already be finished when the guard fires.
       }
     });
-    const pending: AgentStreamEvent[] = [];
-    let released = false;
+    let visible = false;
     let retry = false;
     for await (const event of events) {
-      if (released) {
-        yield event;
-        continue;
-      }
-      if (event.type === "text_delta" && event.delta.length > 0) {
-        released = true;
-        yield* pending;
-        pending.length = 0;
-        yield event;
-        continue;
-      }
       if (event.type === "error") {
-        if (attempt < maxRetries && isRetryableProviderOutputError(event.error)) {
+        if (!visible && attempt < maxRetries && isRetryableProviderOutputError(event.error)) {
           onRetry?.(attempt + 1, event.error);
           try {
             run.cancel("stream-retry");
@@ -164,18 +161,13 @@ async function* runAgentWithRetries(options: {
           retry = true;
           break;
         }
-        released = true;
-        yield* pending;
-        pending.length = 0;
         yield event;
-        continue;
+        return;
       }
-      pending.push(event);
+      if (isVisibleChatContent(event)) visible = true;
+      yield event;
     }
-    if (!retry) {
-      yield* pending;
-      return;
-    }
+    if (!retry) return;
     attempt += 1;
   }
 }
@@ -223,10 +215,27 @@ async function* withGuardStatus(
   }
 }
 
+export function projectIomAgentEvents(options: {
+  runId: string;
+  events: AsyncIterable<AgentStreamEvent>;
+  metadata: ChatRunMetadata;
+  mapError: (error: unknown) => { code: string; message: string };
+}): AsyncIterable<ClientStreamEvent> {
+  return withGuardStatus(
+    agentToClientStream({
+      runId: options.runId,
+      events: options.events,
+      metadata: options.metadata,
+      mapError: options.mapError,
+    }),
+    options.runId,
+  );
+}
+
 export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig) {
-  const openai = new OpenAIClient({
+  const openai = createIomOpenAIClient({
     apiKey: config.OPENAI_API_KEY,
-    baseUrl: config.OPENAI_BASE_URL,
+    ...(config.OPENAI_BASE_URL === undefined ? {} : { baseUrl: config.OPENAI_BASE_URL }),
   });
   const catalog = modelCatalog;
   let knowledgePromise:
@@ -381,6 +390,14 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
               modelId: selection.modelId,
               reasoningEffort: selection.reasoningEffort,
               attempt,
+              providerKind:
+                typeof (error as { kind?: unknown })?.kind === "string"
+                  ? (error as { kind: string }).kind
+                  : undefined,
+              providerCode:
+                typeof (error as { code?: unknown })?.code === "string"
+                  ? (error as { code: string }).code
+                  : undefined,
               providerMessage:
                 typeof (error as { message?: unknown })?.message === "string"
                   ? (error as { message: string }).message
@@ -390,7 +407,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
         },
         start: () =>
           agent.stream({
-            messages: request.messages,
+            messages: sanitizeIomChatHistory(request.messages),
             abortSignal: context.req.raw.signal,
           }),
       });
@@ -415,7 +432,6 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
             errorKind: error instanceof Error ? error.constructor.name : "UnknownError",
             providerStatus,
             providerMessage,
-            // Config keys are not logged; OpenAI SDK may embed key fragments in error messages.
             providerKind:
               typeof (error as { kind?: unknown })?.kind === "string"
                 ? (error as { kind: string }).kind
@@ -431,7 +447,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
           }),
         );
       };
-      const projected = agentToClientStream({
+      const projected = projectIomAgentEvents({
         runId,
         events: stream,
         metadata: metadata.data,
@@ -471,7 +487,21 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
         },
       });
       return createClientStreamResponse({
-        events: withGuardStatus(projected, runId),
+        events: persistChatTranscript({
+          events: projected,
+          initialMessages: request.messages,
+          save: async (messages) => {
+            await database.conversationMessage.create({
+              data: {
+                conversationId: conversation.id,
+                role: "transcript",
+                content: messages as unknown as Prisma.InputJsonValue,
+                modelId: selection.modelId,
+                reasoningEffort: selection.reasoningEffort,
+              },
+            });
+          },
+        }),
         format: "jsonl",
       });
     },

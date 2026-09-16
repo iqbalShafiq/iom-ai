@@ -1,10 +1,15 @@
 import { Agent } from "@anvia/core/agent";
-import type { OpenAICompletionModel } from "@anvia/openai";
 import {
   type ConfidentialityDecision,
   type ConfidentialityPolicy,
   confidentialityDecisionSchema,
 } from "@iom/contracts";
+import {
+  agentReasoningEfforts,
+  type IomOpenAIModel,
+  openaiReasoning,
+  reasoningControls,
+} from "./catalog.js";
 
 export interface ConfidentialityInput {
   text: string;
@@ -19,13 +24,16 @@ export interface ConfidentialityInput {
   }>;
 }
 
-export function createConfidentialityClassifier(model: OpenAICompletionModel) {
+export function createConfidentialityClassifier(model: IomOpenAIModel) {
+  const reasoning = openaiReasoning(agentReasoningEfforts.confidentiality);
   return new Agent({
     id: "iom-confidentiality-classifier",
     name: "IOM Confidentiality Classifier",
     model,
     maxTurns: 1,
     outputSchema: confidentialityDecisionSchema,
+    controls: reasoning.controls,
+    providerOptions: reasoning.providerOptions,
     instructions: `
 Klasifikasikan potongan IOM berdasarkan makna, konteks section, kebijakan HR, contoh, dan marker manual.
 Jangan menggunakan daftar kata sebagai aturan deterministik. Kata hanya boleh menjadi salah satu evidence kontekstual.
@@ -47,7 +55,7 @@ export async function classifyConfidentiality(options: {
   const outcome = await options.agent.generate({
     prompt: JSON.stringify({ policy: options.policy, document: options.input }),
     maxTurns: 1,
-    controls: { reasoningEffort: "high" },
+    controls: reasoningControls(agentReasoningEfforts.confidentiality),
     abortSignal: options.signal,
   });
   if (outcome.type !== "response") throw new Error("CONFIDENTIALITY_CLASSIFICATION_INCOMPLETE");

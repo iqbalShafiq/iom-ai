@@ -206,6 +206,9 @@ importers:
       '@iom/documents':
         specifier: workspace:*
         version: link:../documents
+      openai:
+        specifier: 7.13.0
+        version: 7.13.0(undici@7.29.0)(ws@8.21.3)(zod@4.4.0)
       zod:
         specifier: 4.4.0
         version: 4.4.0

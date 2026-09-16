@@ -1,6 +1,11 @@
 import { Agent } from "@anvia/core/agent";
-import type { OpenAICompletionModel } from "@anvia/openai";
 import { type OverlapMatch, overlapMatchSchema } from "@iom/contracts";
+import {
+  agentReasoningEfforts,
+  type IomOpenAIModel,
+  openaiReasoning,
+  reasoningControls,
+} from "./catalog.js";
 
 export interface RankedCandidate {
   id: string;
@@ -26,13 +31,16 @@ export function reciprocalRankFusion(
   );
 }
 
-export function createOverlapAnalyzer(model: OpenAICompletionModel) {
+export function createOverlapAnalyzer(model: IomOpenAIModel) {
+  const reasoning = openaiReasoning(agentReasoningEfforts.overlap);
   return new Agent({
     id: "iom-overlap-analyzer",
     name: "IOM Overlap Analyzer",
     model,
     maxTurns: 1,
     outputSchema: overlapMatchSchema,
+    controls: reasoning.controls,
+    providerOptions: reasoning.providerOptions,
     instructions: `
 Bandingkan draft IOM dengan satu IOM existing berdasarkan makna regulasi, bukan hanya istilah serupa.
 Identifikasi topik bersama, nilai lama dan usulan baru, tanggal efektif, konflik, dan pasangan evidence.
@@ -60,7 +68,7 @@ export async function analyzeOverlap(options: {
       existingChunks: options.existingChunks,
     }),
     maxTurns: 1,
-    controls: { reasoningEffort: "high" },
+    controls: reasoningControls(agentReasoningEfforts.overlap),
     abortSignal: options.signal,
   });
   if (outcome.type !== "response") throw new Error("OVERLAP_ANALYSIS_INCOMPLETE");
