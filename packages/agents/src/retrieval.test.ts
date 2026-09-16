@@ -2,7 +2,11 @@ import type { EmbeddingModel } from "@anvia/core/embeddings";
 import type { VectorStore } from "@anvia/core/vector-store";
 import type { IomEvidence } from "@iom/contracts";
 import { describe, expect, it } from "vitest";
-import { RoleScopedKnowledgeIndex } from "./retrieval.js";
+import {
+  createPageEmbeddingTexts,
+  PAGE_EMBEDDING_WINDOW_CHARACTERS,
+  RoleScopedKnowledgeIndex,
+} from "./retrieval.js";
 
 type Metadata = { versionId: string; visibility: string; policyVersion: number };
 
@@ -64,5 +68,45 @@ describe("RoleScopedKnowledgeIndex", () => {
     expect(employee.deleted).toEqual([["public", "revoked"]]);
     expect(employee.upserted).toEqual([["public"]]);
     expect(hr.upserted).toEqual([["public", "revoked"]]);
+  });
+
+  it("keeps a short one-page memo in one embedding window", () => {
+    const texts = createPageEmbeddingTexts(evidence("page-1", "EMPLOYEE_SAFE"));
+
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).toContain("Halaman 1");
+    expect(texts[0]).toContain("Isi aturan");
+  });
+
+  it("covers a dense page with multiple vectors while retaining one logical page id", async () => {
+    const employee = fakeStore();
+    const hr = fakeStore();
+    const embeddedTexts: string[] = [];
+    const capturingModel: EmbeddingModel = {
+      ...model,
+      embedTexts: async (texts) => {
+        embeddedTexts.push(...texts);
+        return texts.map((document) => ({ document, vector: [1, 0] }));
+      },
+    };
+    const index = new RoleScopedKnowledgeIndex({
+      model: capturingModel,
+      employeeStore: employee.store,
+      hrStore: hr.store,
+      authorizer: { authorize: async (items) => [...items] },
+    });
+    const page = evidence("page-1", "EMPLOYEE_SAFE");
+    page.text = `${"ketentuan perjalanan dinas ".repeat(80)}AKHIR_UNIK`;
+
+    await index.index([page], 2);
+
+    const pageWindows = createPageEmbeddingTexts(page);
+    expect(pageWindows.length).toBeGreaterThan(1);
+    expect(pageWindows.at(-1)).toContain("AKHIR_UNIK");
+    expect(pageWindows.every((text) => text.length <= PAGE_EMBEDDING_WINDOW_CHARACTERS + 180)).toBe(
+      true,
+    );
+    expect(employee.upserted).toEqual([["page-1"]]);
+    expect(embeddedTexts).toEqual([...pageWindows, ...pageWindows]);
   });
 });

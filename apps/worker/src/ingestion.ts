@@ -75,6 +75,7 @@ export function createIngestionHandler(
             data: {
               status: "PROCESSING",
               confidentialityPolicyId: null,
+              chunkingStrategy: "PAGE",
               reviewedById: null,
               metadataConfirmedAt: null,
               metadataConfirmedById: null,
@@ -95,6 +96,7 @@ export function createIngestionHandler(
               status: "PROCESSING",
               effectiveFrom: new Date(),
               sourceHash: uploaded.sha256,
+              chunkingStrategy: "PAGE",
             },
           });
         });

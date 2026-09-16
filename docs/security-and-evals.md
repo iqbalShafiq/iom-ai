@@ -13,6 +13,9 @@
 - Kandidat semantic overlap diotorisasi ulang ke PostgreSQL sebelum text-nya mencapai model.
 - Reindex menghapus vector dengan chunk ID versi yang sama dari kedua collection sebelum upsert,
   sehingga perubahan `EMPLOYEE_SAFE` menjadi `HR_ONLY` tidak meninggalkan vector employee lama.
+- Halaman adalah unit provenance dan review kerahasiaan. Jika sebagian isi halaman confidential,
+  seluruh halaman tetap HR-only. Window embedding internal tidak pernah menjadi boundary otorisasi
+  atau citation dan selalu kembali ke satu logical page ID sebelum hasil mencapai model.
 
 ## Dataset dan gates
 

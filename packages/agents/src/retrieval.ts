@@ -3,9 +3,12 @@ import { retrieveDocuments, type VectorStore } from "@anvia/core/vector-store";
 import { QdrantVectorClient } from "@anvia/qdrant";
 import { loadTransformersEmbeddingModel } from "@anvia/transformers";
 import type { AccessScope, IomEvidence, SearchIomInput, SearchIomOutput } from "@iom/contracts";
+import { normalizeText } from "@iom/documents";
 
 export const EMBEDDING_MODEL_ID = "Xenova/paraphrase-multilingual-MiniLM-L12-v2";
 export const EMBEDDING_DIMENSIONS = 384;
+export const PAGE_EMBEDDING_WINDOW_CHARACTERS = 260;
+export const PAGE_EMBEDDING_WINDOW_OVERLAP = 50;
 
 export interface RetrievalScope {
   actorId: string;
@@ -39,6 +42,42 @@ type ReplaceableVectorStore = VectorStore<IomEvidence, EvidenceMetadata> & {
   delete(options: { documentIds: string[] }): Promise<void>;
 };
 
+function splitPageForEmbedding(text: string): string[] {
+  const normalized = normalizeText(text);
+  if (normalized.length <= PAGE_EMBEDDING_WINDOW_CHARACTERS) return [normalized];
+
+  const windows: string[] = [];
+  let start = 0;
+  while (start < normalized.length) {
+    const maximumEnd = Math.min(start + PAGE_EMBEDDING_WINDOW_CHARACTERS, normalized.length);
+    let end = maximumEnd;
+    if (maximumEnd < normalized.length) {
+      const paragraphBoundary = normalized.lastIndexOf("\n", maximumEnd);
+      const wordBoundary = normalized.lastIndexOf(" ", maximumEnd);
+      const preferredBoundary = Math.max(paragraphBoundary, wordBoundary);
+      if (preferredBoundary > start + PAGE_EMBEDDING_WINDOW_CHARACTERS / 2) {
+        end = preferredBoundary;
+      }
+    }
+    windows.push(normalized.slice(start, end).trim());
+    if (end >= normalized.length) break;
+
+    const overlapStart = Math.max(start + 1, end - PAGE_EMBEDDING_WINDOW_OVERLAP);
+    const nextWord = normalized.indexOf(" ", overlapStart);
+    start = nextWord >= 0 && nextWord < end ? nextWord + 1 : overlapStart;
+  }
+  return windows.filter(Boolean);
+}
+
+export function createPageEmbeddingTexts(evidence: IomEvidence): string[] {
+  const header = [
+    `IOM ${evidence.iomNumber.slice(0, 40)}`,
+    `Judul ${evidence.title.slice(0, 80)}`,
+    `Halaman ${evidence.page ?? 1}`,
+  ].join("\n");
+  return splitPageForEmbedding(evidence.text).map((window) => `${header}\n${window}`);
+}
+
 export class RoleScopedKnowledgeIndex implements RetrievalService {
   readonly #model: EmbeddingModel;
   readonly #employeeStore: ReplaceableVectorStore;
@@ -67,7 +106,7 @@ export class RoleScopedKnowledgeIndex implements RetrievalService {
       model: this.#model,
       documents: employee,
       id: (item) => item.chunkId,
-      content: (item) => item.text,
+      content: createPageEmbeddingTexts,
       metadata: (item) => ({
         versionId: item.versionId,
         visibility: item.visibility,
@@ -79,7 +118,7 @@ export class RoleScopedKnowledgeIndex implements RetrievalService {
       model: this.#model,
       documents: evidence,
       id: (item) => item.chunkId,
-      content: (item) => item.text,
+      content: createPageEmbeddingTexts,
       metadata: (item) => ({
         versionId: item.versionId,
         visibility: item.visibility,
@@ -110,7 +149,9 @@ export class RoleScopedKnowledgeIndex implements RetrievalService {
       store,
       model: this.#model,
       query: input.query,
-      topK: 10,
+      // A logical page can own several window vectors. Ask Qdrant for extra points so vectors
+      // from one dense page do not crowd out other relevant pages before document-level dedupe.
+      topK: 30,
       minScore: 0.35,
       abortSignal: signal,
     });

@@ -18,14 +18,19 @@ internal model payload.
 2. Batch membawa jumlah file yang diharapkan dan ditutup (`sealed`) setelah transfer selesai, sehingga
    stream progress dapat berakhir dengan benar termasuk ketika seluruh file ditolak.
 3. Durable job mengekstrak PDF/DOCX/Markdown/TXT; halaman tanpa text layer memakai OCR lokal.
-4. Stable chunk ID dibentuk dari normalized content dan posisi. Panjang text, chunk, dan panggilan AI
-   memiliki batas eksplisit.
-5. Anvia structured classifier menerapkan policy natural-language beserta marker HR.
-6. Conflict, low-confidence, dan OCR rendah berhenti di `NEEDS_REVIEW`. Semua keputusan—termasuk
+4. Satu halaman non-kosong menjadi satu chunk/evidence logis dengan stable ID dari content dan nomor
+   halaman. PDF mempertahankan halaman fisik; DOCX/Markdown/TXT tanpa informasi layout diperlakukan
+   sebagai satu halaman logis.
+5. Halaman panjang dibagi hanya pada lapisan embedding menjadi window pendek yang overlap. Qdrant
+   menyimpan beberapa vector point, tetapi semuanya memakai satu logical page ID dan hasil search
+   dideduplikasi kembali ke halaman. Ini mencegah bagian bawah halaman terpotong batas model.
+6. Anvia structured classifier menerapkan policy natural-language beserta marker HR. Karena review
+   mengikuti unit halaman, satu bagian confidential membuat seluruh halaman konservatif/HR-only.
+7. Conflict, low-confidence, dan OCR rendah berhenti di `NEEDS_REVIEW`. Semua keputusan—termasuk
    hasil confidence tinggi—harus memiliki jejak persetujuan HR.
-7. Metadata yang dikonfirmasi, review kerahasiaan lengkap, overlap terbaru yang selesai, dan relasi
+8. Metadata yang dikonfirmasi, review kerahasiaan lengkap, overlap terbaru yang selesai, dan relasi
    yang diwajibkan keputusannya merupakan satu publish-readiness gate server-side.
-8. Publish yang dikonfirmasi HR mengubah target `REPLACES` yang masih published menjadi
+9. Publish yang dikonfirmasi HR mengubah target `REPLACES` yang masih published menjadi
    `SUPERSEDED`, lalu worker melakukan embedding/indexing. Reindex menghapus ID vector lama sebelum
    upsert agar perubahan visibility tidak meninggalkan vector employee yang basi.
 

@@ -35,6 +35,7 @@ export interface IomVersionRow {
   iomNumber: string;
   title: string;
   revision: number;
+  chunkingStrategy?: "LEGACY_SECTION" | "PAGE";
   status: string;
   effectiveFrom: string;
   effectiveUntil?: string | null;

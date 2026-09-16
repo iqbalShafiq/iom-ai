@@ -73,6 +73,11 @@ enum AnnotationKind {
   NOTE
 }
 
+enum ChunkingStrategy {
+  LEGACY_SECTION
+  PAGE
+}
+
 enum OverlapRecommendation {
   ARCHIVE_EXISTING
   PUBLISH_AS_COMPLEMENT
@@ -216,6 +221,7 @@ model IomVersion {
   effectiveFrom         DateTime
   effectiveUntil        DateTime?
   sourceHash            String
+  chunkingStrategy      ChunkingStrategy         @default(PAGE)
   confidentialityPolicyId String?    @db.Uuid
   metadataConfirmedAt   DateTime?
   metadataConfirmedById String?      @db.Uuid

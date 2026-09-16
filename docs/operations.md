@@ -54,6 +54,11 @@ Migration `upload_pipeline_hardening` memeriksa duplicate SHA-256 sebelum membua
 akan gagal dengan pesan eksplisit bila data lama mengandung duplikat. Selesaikan duplikat melalui
 prosedur data-governance yang menjaga audit trail; jangan menghapus record otomatis.
 
+Migration `page_chunking` menandai versi lama sebagai `LEGACY_SECTION`; versi yang baru diproses
+memakai `PAGE`. Versi published lama tidak diubah diam-diam karena rechunking juga mengubah unit
+review kerahasiaan dan citation. Migrasikan corpus lama melalui upload revision/reingestion yang
+melewati classification dan persetujuan HR lagi, lalu publish dan supersede melalui flow normal.
+
 ## Incident kerahasiaan
 
 1. Nonaktifkan akses platform/API atau scope terdampak.

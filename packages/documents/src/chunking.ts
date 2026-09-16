@@ -39,63 +39,26 @@ export function normalizeText(text: string): string {
     .trim();
 }
 
-function splitOversizedText(text: string, maxCharacters: number): string[] {
-  const parts: string[] = [];
-  let remaining = text;
-  while (remaining.length > maxCharacters) {
-    const wordBoundary = remaining.lastIndexOf(" ", maxCharacters);
-    const cutAt = wordBoundary >= Math.floor(maxCharacters / 2) ? wordBoundary : maxCharacters;
-    parts.push(remaining.slice(0, cutAt).trim());
-    remaining = remaining.slice(cutAt).trim();
-  }
-  if (remaining) parts.push(remaining);
-  return parts;
-}
-
-export function chunkPages(
-  pages: ParsedPage[],
-  sourceHash: string,
-  maxCharacters = 2_400,
-): DocumentChunk[] {
-  if (!Number.isInteger(maxCharacters) || maxCharacters < 1) {
-    throw new Error("maxCharacters must be a positive integer.");
-  }
+export function chunkPages(pages: ParsedPage[], sourceHash: string): DocumentChunk[] {
   const chunks: DocumentChunk[] = [];
-  let ordinal = 0;
+  const seenPages = new Set<number>();
 
   for (const page of pages) {
-    const paragraphs = normalizeText(page.text)
-      .split(/\n\s*\n/)
-      .filter(Boolean);
-    let buffer = "";
-    const flush = () => {
-      if (!buffer) return;
-      const stableKey = `${sourceHash}:p${page.page}:c${ordinal}:${createHash("sha1").update(buffer).digest("hex")}`;
-      chunks.push({
-        id: stableUuid(stableKey),
-        stableKey,
-        ordinal,
-        pageStart: page.page,
-        pageEnd: page.page,
-        text: buffer,
-      });
-      ordinal += 1;
-      buffer = "";
-    };
-    for (const paragraphPart of paragraphs.flatMap((paragraph) =>
-      splitOversizedText(paragraph, maxCharacters),
-    )) {
-      const paragraph = paragraphPart;
-      const looksLikeHeading = paragraph.length <= 120 && !/[.!?;:]$/.test(paragraph);
-      if (
-        buffer &&
-        (buffer.length + paragraph.length + 2 > maxCharacters ||
-          (looksLikeHeading && buffer.length >= 200))
-      )
-        flush();
-      buffer = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
+    if (!Number.isSafeInteger(page.page) || page.page < 1 || seenPages.has(page.page)) {
+      throw new Error("Parsed pages must have unique positive page numbers.");
     }
-    flush();
+    seenPages.add(page.page);
+    const text = normalizeText(page.text);
+    if (!text) continue;
+    const stableKey = `${sourceHash}:page:${page.page}:${createHash("sha1").update(text).digest("hex")}`;
+    chunks.push({
+      id: stableUuid(stableKey),
+      stableKey,
+      ordinal: chunks.length,
+      pageStart: page.page,
+      pageEnd: page.page,
+      text,
+    });
   }
   return chunks;
 }
