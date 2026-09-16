@@ -1,22 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { resolveModelSelection } from "./catalog.js";
+import { modelCatalog, resolveModelSelection } from "./catalog.js";
 import { reciprocalRankFusion } from "./overlap.js";
 import { StreamReleaseGuard } from "./stream-guard.js";
 
 describe("agent policies", () => {
-  it("rejects arbitrary models and unsupported effort", () => {
-    expect(() => resolveModelSelection("custom-model", "high")).toThrow("MODEL_NOT_ALLOWED");
-    expect(() => resolveModelSelection("gpt-6-astra", "none")).toThrow(
-      "REASONING_EFFORT_NOT_SUPPORTED",
-    );
+  it("exposes only the approved Luna chat configuration", () => {
+    expect(modelCatalog).toEqual([
+      expect.objectContaining({
+        id: "gpt-5.6-luna",
+        label: "GPT 5.6 Luna",
+        supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
+        defaultReasoningEffort: "low",
+      }),
+    ]);
   });
 
-  it("keeps Luna on the tool-compatible no-reasoning mode", () => {
-    expect(resolveModelSelection("gpt-5.6-luna", "none")).toEqual({
+  it("rejects arbitrary models and unsupported effort", () => {
+    expect(() => resolveModelSelection("custom-model", "high")).toThrow("MODEL_NOT_ALLOWED");
+    expect(() => resolveModelSelection("gpt-5.6-terra", "medium")).toThrow("MODEL_NOT_ALLOWED");
+  });
+
+  it("allows the documented Luna reasoning levels exposed by the product", () => {
+    expect(resolveModelSelection("gpt-5.6-luna", "low")).toEqual({
       modelId: "gpt-5.6-luna",
-      reasoningEffort: "none",
+      reasoningEffort: "low",
     });
-    expect(() => resolveModelSelection("gpt-5.6-luna", "high")).toThrow(
+    expect(resolveModelSelection("gpt-5.6-luna", "xhigh")).toEqual({
+      modelId: "gpt-5.6-luna",
+      reasoningEffort: "xhigh",
+    });
+    expect(() => resolveModelSelection("gpt-5.6-luna", "none")).toThrow(
       "REASONING_EFFORT_NOT_SUPPORTED",
     );
   });

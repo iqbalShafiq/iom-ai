@@ -33,7 +33,7 @@ function ChatLanding() {
           body: JSON.stringify({
             accessScope: scope,
             modelId: "gpt-5.6-luna",
-            reasoningEffort: "none",
+            reasoningEffort: "low",
           }),
         },
       );

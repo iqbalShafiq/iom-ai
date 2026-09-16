@@ -11,8 +11,8 @@ import {
   createIomAgent,
   createOpenAIModel,
   createQdrantKnowledgeIndex,
+  modelCatalog,
   type RoleScopedKnowledgeIndex,
-  resolveCatalog,
   resolveModelSelection,
   StreamReleaseGuard,
 } from "@iom/agents";
@@ -30,7 +30,7 @@ import type { AppBindings } from "./types.js";
 const conversationSchema = z.object({
   accessScope: z.enum(["EMPLOYEE", "HR"]).default("EMPLOYEE"),
   modelId: z.string().default("gpt-5.6-luna"),
-  reasoningEffort: z.string().default("none"),
+  reasoningEffort: z.string().default("low"),
 });
 
 async function deniedFingerprints(database: Database) {
@@ -228,9 +228,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
     apiKey: config.OPENAI_API_KEY,
     baseUrl: config.OPENAI_BASE_URL,
   });
-  // Deployment-specific gateways may expose different models. Resolve once so
-  // the catalog endpoint and stream validation agree on the same list.
-  const catalog = resolveCatalog(config.MODEL_CATALOG_OVERRIDE);
+  const catalog = modelCatalog;
   let knowledgePromise:
     | Promise<{ index: RoleScopedKnowledgeIndex; close: () => Promise<void> }>
     | undefined;
@@ -253,7 +251,10 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
   app.get("/ai/models", (context) =>
     context.json({
       models: catalog,
-      defaults: { modelId: catalog[0]?.id ?? "gpt-5.6-luna", reasoningEffort: "none" },
+      defaults: {
+        modelId: catalog[0]?.id ?? "gpt-5.6-luna",
+        reasoningEffort: catalog[0]?.defaultReasoningEffort ?? "low",
+      },
     }),
   );
 
