@@ -1,15 +1,12 @@
-import {
-  createHttpClientTransport,
-  messagesToUIMessages,
-  type UIMessage,
-  type UIMessagePart,
-} from "@anvia/client";
+import { createHttpClientTransport, type UIMessage, type UIMessagePart } from "@anvia/client";
 import { useChat } from "@anvia/react";
 import {
   ChatProvider,
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useMessage,
+  useMessagePart,
 } from "@anvia/react-ui";
 import type { ModelOption } from "@iom/contracts";
 import { Select, SelectOption } from "@iom/ui";
@@ -24,7 +21,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "@/lib/api";
 import type { Conversation } from "@/lib/types";
+import { hydrateStoredChatMessages } from "./hydrate-chat-messages";
 import { reconcileModelPreference } from "./model-preference";
+import { thinkingStatusLabel } from "./thinking-label";
 
 interface StoredMessage {
   content: unknown;
@@ -70,17 +69,66 @@ function finalizePendingChatMessages(messages: readonly UIMessage[]): readonly U
   });
 }
 
-function ChatPart({ part }: { part: UIMessagePart }) {
+function ReasoningPart({ isStreamingMessage }: { isStreamingMessage: boolean }) {
+  const { part } = useMessagePart();
+  const { message } = useMessage();
+  const startedAtRef = useRef<number | null>(null);
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null);
+  const partIndex = message.parts.findIndex((item) => item.id === part.id);
+  const hasFollowUp = message.parts
+    .slice(partIndex + 1)
+    .some((item) => item.type === "tool" || item.type === "text" || item.type === "reasoning");
+  const isLive = isStreamingMessage && !hasFollowUp;
+  const summaryText = part.type === "reasoning" ? part.text.trim() : "";
+  const hasSummary = summaryText.length > 0;
+  const label = thinkingStatusLabel({ isLive, elapsedMs });
+
+  useEffect(() => {
+    if (part.type !== "reasoning") return;
+    if (isLive) {
+      startedAtRef.current ??= Date.now();
+      const timer = window.setInterval(() => {
+        if (startedAtRef.current !== null) setElapsedMs(Date.now() - startedAtRef.current);
+      }, 250);
+      return () => window.clearInterval(timer);
+    }
+    if (startedAtRef.current !== null) {
+      setElapsedMs(Date.now() - startedAtRef.current);
+    }
+    return undefined;
+  }, [isLive, part.type]);
+
+  if (part.type !== "reasoning") return null;
+  const heading = (
+    <>
+      <Brain weight="bold" /> {label}
+    </>
+  );
+  if (!hasSummary) {
+    return (
+      <div className="reasoning-status" data-reasoning-state={isLive ? "live" : "done"}>
+        {heading}
+      </div>
+    );
+  }
+  return (
+    <MessagePrimitive.Reasoning className="reasoning-card" {...(isLive ? { open: true } : {})}>
+      <summary>{heading}</summary>
+      <MessagePrimitive.Markdown />
+    </MessagePrimitive.Reasoning>
+  );
+}
+
+function ChatPart({
+  part,
+  isStreamingMessage,
+}: {
+  part: UIMessagePart;
+  isStreamingMessage: boolean;
+}) {
   if (part.type === "text") return <MessagePrimitive.Markdown />;
   if (part.type === "reasoning") {
-    return (
-      <MessagePrimitive.Reasoning className="reasoning-card">
-        <summary>
-          <Brain weight="bold" /> Ringkasan penalaran model
-        </summary>
-        <MessagePrimitive.Markdown />
-      </MessagePrimitive.Reasoning>
-    );
+    return <ReasoningPart key={part.id} isStreamingMessage={isStreamingMessage} />;
   }
   if (part.type === "tool") return <ToolPart />;
   if (part.type === "error") return null;
@@ -108,10 +156,10 @@ export function ChatView(props: {
   storedMessages?: StoredMessage[];
   models: readonly ModelOption[];
 }) {
-  const initialMessages = useMemo(() => {
-    const latest = props.storedMessages?.[0]?.content;
-    return Array.isArray(latest) ? messagesToUIMessages(latest as never) : [];
-  }, [props.storedMessages]);
+  const initialMessages = useMemo(
+    () => hydrateStoredChatMessages(props.storedMessages?.[0]?.content),
+    [props.storedMessages],
+  );
   const initialPreference = reconcileModelPreference(
     props.models,
     props.conversation.modelId,
@@ -274,7 +322,16 @@ export function ChatView(props: {
                         flushImmediately: chat.status === "error",
                       }}
                     >
-                      {(part) => <ChatPart part={part} />}
+                      {(part) => (
+                        <ChatPart
+                          part={part}
+                          isStreamingMessage={
+                            isRunning &&
+                            message.role === "assistant" &&
+                            chat.messages.at(-1)?.id === message.id
+                          }
+                        />
+                      )}
                     </MessagePrimitive.Parts>
                   </MessagePrimitive.Content>
                   <MessagePrimitive.Actions className="message__actions">

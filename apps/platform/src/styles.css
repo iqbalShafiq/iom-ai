@@ -1402,6 +1402,7 @@ time,
 .overlap-runs > section > header svg,
 .section-heading > a svg,
 .tool-card__header svg,
+.reasoning-status svg,
 .reasoning-card summary svg {
   display: block;
   flex: 0 0 auto;
@@ -2071,18 +2072,26 @@ time,
   background: transparent;
   cursor: pointer;
 }
+.reasoning-status,
 .reasoning-card {
   margin-bottom: 0.8rem;
+}
+.reasoning-status,
+.reasoning-card summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #4e4b45;
+  font-weight: 750;
+  font-size: 0.86rem;
+}
+.reasoning-card {
   border: 1.5px solid var(--ink);
   background: #e8e1d5;
 }
 .reasoning-card summary {
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
   padding: 0.7rem;
-  font-weight: 750;
 }
 .reasoning-card > div {
   padding: 0 0.8rem 0.8rem;
