@@ -32,19 +32,10 @@ type ProductFeatureId = (typeof productFeatureIds)[number];
 const featureCycleMs = 4800;
 const featureTransitionMs = 200;
 
-function PreviewFrame({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  children: ReactNode;
-}) {
+function PreviewFrame({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="login-preview__frame">
       <header className="login-preview__page-head">
-        <span>{eyebrow}</span>
         <strong>{title}</strong>
       </header>
       {children}
@@ -54,7 +45,7 @@ function PreviewFrame({
 
 function ChatPreview() {
   return (
-    <PreviewFrame eyebrow="EMPLOYEE SAFE / CHAT" title="Tanya kebijakan internal">
+    <PreviewFrame title="Tanya kebijakan internal">
       <div className="mini-chat">
         <div className="mini-chat__question">Aturan perjalanan dinas mana yang masih berlaku?</div>
         <div className="mini-tool">
@@ -83,7 +74,7 @@ function ChatPreview() {
 
 function UploadPreview() {
   return (
-    <PreviewFrame eyebrow="INGESTION / BATCH" title="Upload">
+    <PreviewFrame title="Upload">
       <div className="mini-upload">
         <div className="mini-dropzone">
           <FileArrowUp weight="bold" />
@@ -120,7 +111,7 @@ function UploadPreview() {
 
 function ConfidentialPreview() {
   return (
-    <PreviewFrame eyebrow="AI + HR REVIEW" title="Keputusan confidentiality">
+    <PreviewFrame title="Keputusan confidentiality">
       <div className="mini-review">
         <div className="mini-document">
           <small>PREVIEW DOKUMEN</small>
@@ -152,7 +143,7 @@ function ConfidentialPreview() {
 
 function OverlapPreview() {
   return (
-    <PreviewFrame eyebrow="HYBRID SEARCH / HUMAN DECISION" title="Overlap analysis">
+    <PreviewFrame title="Overlap analysis">
       <div className="mini-overlap">
         <div className="mini-overlap__heading">
           <span>
@@ -187,7 +178,7 @@ function OverlapPreview() {
 
 function VersioningPreview() {
   return (
-    <PreviewFrame eyebrow="TEMPORAL / VERSION HISTORY" title="Jejak aturan">
+    <PreviewFrame title="Jejak aturan">
       <div className="mini-version-strip">
         <span>EFEKTIF SESUAI TANGGAL</span>
         <span>RELASI DIKONFIRMASI HR</span>

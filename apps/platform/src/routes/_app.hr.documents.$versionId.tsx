@@ -187,9 +187,7 @@ function DocumentDetail() {
   return (
     <div className="page-stack document-detail">
       <PageHeader
-        eyebrow={`${version.iomNumber} / REVISION ${version.revision}`}
         title="Detail dokumen"
-        description="Review dan publikasi"
         actions={
           <div className="header-action-group">
             <StatusStamp status={version.status} />

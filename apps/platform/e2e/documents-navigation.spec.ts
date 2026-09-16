@@ -17,6 +17,10 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: { versions: [] } });
       return;
     }
+    if (pathname === "/iom/review-count") {
+      await route.fulfill({ json: { count: 5 } });
+      return;
+    }
     if (pathname === "/overlap/runs") {
       await route.fulfill({ json: { runs: [] } });
       return;
@@ -28,7 +32,14 @@ test.beforeEach(async ({ page }) => {
 test("document tools use nested navigation and routes", async ({ page }) => {
   await page.goto("/hr");
 
+  await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
+  const overviewSections = page.locator(".operations-main h2");
+  await expect(overviewSections.nth(0)).toHaveText("Upload berjalan");
+  await expect(page.locator(".section-heading__button-link")).toBeVisible();
+  await expect(page.getByText("Buka semua")).toHaveCount(0);
+
   const navigation = page.getByRole("navigation", { name: "Navigasi utama" });
+  await expect(navigation.locator(".sidebar-review-counter")).toHaveText("5");
   await expect(navigation.getByRole("link", { name: "Documents" })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Upload", exact: true })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Confidentiality" })).toBeVisible();

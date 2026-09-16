@@ -25,11 +25,7 @@ function AuditPage() {
   const { events } = Route.useLoaderData();
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow="APPEND ONLY / SAFE METADATA"
-        title="Audit log"
-        description="Jejak aktivitas sensitif"
-      />
+      <PageHeader title="Audit log" />
       {events.length === 0 ? (
         <EmptyState title="Belum ada aktivitas" description="Keputusan HR tercatat" />
       ) : (

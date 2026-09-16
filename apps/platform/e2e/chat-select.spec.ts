@@ -67,8 +67,13 @@ test("model and reasoning options can be selected by pointer and keyboard", asyn
   await expect(reasoning).toBeFocused();
 
   await reasoning.press("Enter");
+  await expect(page.getByRole("listbox")).toBeVisible();
   await reasoning.press("Home");
   await reasoning.press("ArrowDown");
   await reasoning.press("Enter");
   await expect(reasoning).toHaveText("medium");
+
+  await page.getByRole("button", { name: "Tutup percakapan" }).click();
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByRole("heading", { name: "Chats" })).toBeVisible();
 });

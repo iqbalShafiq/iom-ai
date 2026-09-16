@@ -15,11 +15,7 @@ function ReviewsPage() {
   );
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow="CONFIDENTIALITY / REVIEW"
-        title="Review kerahasiaan"
-        description="Keputusan wajib HR"
-      />
+      <PageHeader title="Review kerahasiaan" />
       {pending.length === 0 ? (
         <EmptyState title="Antrean sudah bersih" description="Semua keputusan selesai" />
       ) : (

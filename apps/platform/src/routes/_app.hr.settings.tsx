@@ -1,5 +1,5 @@
 import { Button, EmptyState, Field, Input, PageHeader, StatusStamp, Textarea } from "@iom/ui";
-import { Flask, Gear, Lightning, Warning } from "@phosphor-icons/react";
+import { Flask, Gear, Lightning, PlusCircle, StackSimple, Warning } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { type FormEvent, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -59,15 +59,13 @@ function SettingsPage() {
   }
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow="CONFIDENTIALITY / VERSIONED POLICY"
-        title="Pengaturan"
-        description="Kelola kebijakan akses"
-      />
+      <PageHeader title="Pengaturan" />
       <div className="settings-grid">
         <form className="policy-editor" onSubmit={create}>
           <div className="section-heading">
-            <span>NEW</span>
+            <span aria-hidden="true" title="Draft kebijakan baru">
+              <PlusCircle weight="bold" />
+            </span>
             <div>
               <h2>Draft kebijakan</h2>
               <p>Belum mengubah corpus</p>
@@ -99,7 +97,9 @@ function SettingsPage() {
         </form>
         <section className="policy-history">
           <div className="section-heading">
-            <span>VERSIONS</span>
+            <span aria-hidden="true" title="Riwayat kebijakan">
+              <StackSimple weight="bold" />
+            </span>
             <div>
               <h2>Riwayat kebijakan</h2>
               <p>Semua versi tersimpan</p>

@@ -45,17 +45,15 @@ function ChatLanding() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="KNOWLEDGE / CHAT"
-        title="Chat regulasi"
-        description="Jawaban berbasis IOM"
+        title="Chats"
         actions={
           <div className="header-action-group">
-            <Button disabled={busy} onClick={() => create("EMPLOYEE")}>
-              <Plus /> Chat employee-safe
+            <Button variant="secondary" disabled={busy} onClick={() => create("EMPLOYEE")}>
+              <Plus weight="bold" /> {user.role === "HR_ADMIN" ? "Chat as Employee" : "Start Chat"}
             </Button>
             {user.role === "HR_ADMIN" ? (
-              <Button disabled={busy} onClick={() => create("HR")}>
-                <Plus /> Chat HR
+              <Button variant="primary" disabled={busy} onClick={() => create("HR")}>
+                <Plus weight="bold" /> Chat as HR
               </Button>
             ) : null}
           </div>

@@ -275,6 +275,13 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     return context.json({ versions });
   });
 
+  app.get("/iom/review-count", requireHr(), async (context) => {
+    const count = await context
+      .get("database")
+      .iomVersion.count({ where: { status: "IN_REVIEW" } });
+    return context.json({ count });
+  });
+
   app.get("/iom/:versionId", async (context) => {
     const actor = context.get("actor");
     const version = await context.get("database").iomVersion.findFirst({

@@ -10,8 +10,8 @@ import {
   SignOut,
   UploadSimple,
 } from "@phosphor-icons/react";
-import { Link, useNavigate } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { type ReactNode, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import type { User } from "@/lib/types";
 
@@ -27,6 +27,31 @@ const documentNavigation = [
 
 export function AppShell({ user, children }: { user: User; children: ReactNode }) {
   const navigate = useNavigate();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const [reviewCount, setReviewCount] = useState<number | null>(null);
+
+  // AppShell stays mounted across navigation, so the pathname is the trigger that
+  // keeps the counter fresh after review work.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the refetch trigger
+  useEffect(() => {
+    if (user.role !== "HR_ADMIN") {
+      setReviewCount(null);
+      return;
+    }
+    let cancelled = false;
+    void apiFetch<{ count: number }>("/iom/review-count")
+      .then(({ count }) => {
+        if (!cancelled) setReviewCount(Number.isInteger(count) && count >= 0 ? count : null);
+      })
+      .catch(() => {
+        // The counter is an optional navigation aid; keep it quiet if its read fails.
+        if (!cancelled) setReviewCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, user.role]);
+
   async function logout() {
     await apiFetch("/auth/logout", { method: "POST" });
     await navigate({ to: "/login" });
@@ -43,7 +68,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
         </Link>
         <nav aria-label="Navigasi utama">
           <Link to="/chat" activeProps={{ "data-active": true }}>
-            <ChatCircleDots weight="bold" /> Chat regulasi
+            <ChatCircleDots weight="bold" /> Chats
           </Link>
           {user.role === "HR_ADMIN" ? (
             <>
@@ -56,14 +81,35 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
                   activeOptions={{ exact: true }}
                   activeProps={{ "data-active": true }}
                 >
-                  <Files weight="bold" /> Documents
+                  <Files weight="bold" /> <span className="sidebar-link-label">Documents</span>
                 </Link>
                 <div className="sidebar-subnav">
-                  {documentNavigation.map((item) => (
-                    <Link key={item.to} to={item.to} activeProps={{ "data-active": true }}>
-                      <item.icon weight="bold" /> {item.label}
-                    </Link>
-                  ))}
+                  {documentNavigation.map((item) => {
+                    const showReviewCount =
+                      item.to === "/hr/documents/confidentiality" &&
+                      reviewCount !== null &&
+                      reviewCount > 0;
+                    return (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        activeProps={{ "data-active": true }}
+                        aria-label={
+                          showReviewCount
+                            ? `${item.label}, ${reviewCount} dokumen perlu review HR`
+                            : undefined
+                        }
+                      >
+                        <item.icon weight="bold" />
+                        <span className="sidebar-link-label">{item.label}</span>
+                        {showReviewCount ? (
+                          <span className="sidebar-review-counter" aria-hidden="true">
+                            {reviewCount}
+                          </span>
+                        ) : null}
+                      </Link>
+                    );
+                  })}
                 </div>
               </div>
               <Link to="/hr/audit" activeProps={{ "data-active": true }}>

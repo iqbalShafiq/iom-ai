@@ -113,15 +113,13 @@ code,
 time,
 .section-index,
 .page-header__eyebrow,
-.row-index,
-.scope-stamp {
+.row-index {
   font-family: "JetBrains Mono Variable", monospace;
 }
 
 .ui-button,
 .ui-icon-button {
   border: var(--line);
-  background: var(--orange);
   font-weight: 750;
   display: inline-flex;
   align-items: center;
@@ -138,14 +136,31 @@ time,
   min-height: 44px;
   padding: 0.7rem 1rem;
   border-radius: 4px;
+  background: var(--ink);
+  color: var(--paper-light);
 }
 .ui-icon-button {
   width: 38px;
   height: 38px;
   padding: 0;
   border-radius: 3px;
+  background: var(--orange);
+  color: var(--ink);
 }
-.ui-button:hover,
+.ui-button--primary {
+  background: var(--ink);
+  color: var(--paper-light);
+}
+.ui-button--primary:hover {
+  background: #3a3935;
+}
+.ui-button--secondary {
+  background: var(--yellow);
+  color: var(--ink);
+}
+.ui-button--secondary:hover {
+  background: #f5d77e;
+}
 .ui-icon-button:hover {
   background: #f16e51;
 }
@@ -885,6 +900,7 @@ time,
   overflow-y: auto;
 }
 .app-sidebar nav a {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.7rem;
@@ -892,6 +908,26 @@ time,
   border: 1.5px solid transparent;
   font-weight: 680;
   font-size: 0.9rem;
+}
+.sidebar-link-label {
+  min-width: 0;
+}
+.sidebar-review-counter {
+  min-width: 1.35rem;
+  height: 1.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  padding: 0 0.25rem;
+  border: 1.5px solid var(--ink);
+  /* Matches the error/check status hue so the count reads as attention, not decoration. */
+  background: #a52d25;
+  color: var(--paper-light);
+  font:
+    800 0.68rem "JetBrains Mono Variable",
+    monospace;
+  line-height: 1;
 }
 .app-sidebar nav a:hover {
   background: rgba(255, 253, 247, 0.5);
@@ -970,17 +1006,17 @@ time,
   height: 100dvh;
   min-height: 0;
   overflow-y: auto;
-  padding: clamp(1.25rem, 3vw, 3rem);
+  padding: 0 clamp(1.25rem, 3vw, 3rem) clamp(1.25rem, 3vw, 3rem);
 }
 /* The document detail page owns its own full-viewport layout: the root
    content area stops scrolling and every inner region scrolls instead. */
 .app-content:has(.document-detail) {
   overflow: hidden;
-  padding: 1rem;
+  padding: 0 1rem 1rem;
 }
 .page-stack {
   display: grid;
-  gap: 2rem;
+  gap: 1rem;
   max-width: 1500px;
   margin: 0 auto;
 }
@@ -996,7 +1032,7 @@ time,
   gap: 0.6rem;
 }
 .document-detail .page-header {
-  padding-bottom: 0.6rem;
+  padding-bottom: 0;
   align-items: center;
 }
 .document-detail .page-header p {
@@ -1043,10 +1079,16 @@ time,
 .page-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: center;
   gap: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: var(--line);
+  min-height: 88px;
+  padding-bottom: 0;
+}
+.page-header > div:first-child {
+  min-height: 86px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 .page-header__eyebrow {
   display: block;
@@ -1058,13 +1100,13 @@ time,
 }
 .page-header h1 {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 4.3rem);
+  font-size: clamp(2rem, 3.8vw, 3.5rem);
   line-height: 0.95;
   letter-spacing: -0.06em;
   max-width: 940px;
 }
 .page-header p {
-  margin: 0.7rem 0 0;
+  margin: 0.45rem 0 0;
   color: var(--muted);
   max-width: 720px;
   line-height: 1.45;
@@ -1176,24 +1218,11 @@ time,
 
 .operations-board {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 2rem;
+  grid-template-columns: minmax(0, 1fr);
 }
 .operations-main {
   display: grid;
   gap: 0.75rem;
-}
-.operations-rail {
-  border-left: var(--line);
-  padding-left: 1.5rem;
-}
-.rail-title {
-  display: block;
-  border-bottom: var(--line);
-  padding-bottom: 0.8rem;
-  font:
-    800 0.73rem "JetBrains Mono Variable",
-    monospace;
 }
 .section-heading {
   min-height: 66px;
@@ -1202,9 +1231,6 @@ time,
   gap: 1rem;
   align-items: center;
   margin-bottom: 0.5rem;
-}
-.section-heading--second {
-  margin-top: 2rem;
 }
 .section-heading > span {
   width: 44px;
@@ -1218,6 +1244,11 @@ time,
     800 0.72rem "JetBrains Mono Variable",
     monospace;
 }
+.section-heading > span svg {
+  width: 23px;
+  height: 23px;
+  display: block;
+}
 .section-heading h2 {
   margin: 0;
   font-size: 1.2rem;
@@ -1227,13 +1258,18 @@ time,
   color: var(--muted);
   font-size: 0.86rem;
 }
-.section-heading > a {
+.section-heading > a:not(.section-heading__button-link) {
   display: flex;
   gap: 0.4rem;
   align-items: center;
   font-weight: 750;
   border-bottom: 1.5px solid var(--ink);
   padding-bottom: 0.2rem;
+}
+/* The action is a real link wrapping a button; the button owns the whole box. */
+.section-heading__button-link {
+  display: flex;
+  white-space: nowrap;
 }
 .batch-row {
   padding: 1rem;
@@ -1248,40 +1284,6 @@ time,
 }
 .batch-row small {
   color: var(--muted);
-}
-.review-stripe {
-  min-height: 100px;
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  align-items: center;
-  gap: 1rem;
-  border: var(--line);
-  background: var(--orange);
-  padding: 1rem 1.4rem;
-  box-shadow: var(--shadow);
-}
-.review-stripe strong {
-  font:
-    850 2.4rem "JetBrains Mono Variable",
-    monospace;
-}
-.health-list {
-  margin-top: 1rem;
-  display: grid;
-  gap: 0.5rem;
-}
-.health-list > span {
-  display: grid;
-  grid-template-columns: 8px 1fr auto;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 700;
-}
-.health-list i {
-  width: 8px;
-  height: 8px;
-  background: var(--green);
-  border-radius: 50%;
 }
 .inline-empty {
   padding: 1.2rem;
@@ -1856,7 +1858,6 @@ time,
 }
 
 .conversation-list {
-  border-top: var(--line);
   display: grid;
 }
 .conversation-list button {
@@ -1897,32 +1898,32 @@ time,
   overflow: hidden;
 }
 .chat-layout {
+  position: relative;
   height: 100vh;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
 }
-.chat-header {
-  min-height: 88px;
-  box-sizing: border-box;
-  padding: 0.9rem 1.3rem;
-  border-bottom: var(--line);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--paper);
-  gap: 1rem;
+.chat-layout[data-closing="true"] {
+  opacity: 0;
+  transform: translateX(12px);
 }
-.chat-header h1 {
-  margin: 0.25rem 0 0;
-  font-size: 1.1rem;
+.chat-close {
+  position: absolute;
+  top: 0.9rem;
+  right: 1rem;
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  background: var(--paper-light);
+  color: var(--ink);
 }
-.scope-stamp {
-  display: inline-block;
+.chat-close:hover {
   background: var(--yellow);
-  border: 1.5px solid var(--ink);
-  padding: 0.2rem 0.4rem;
-  font-size: 0.62rem;
-  font-weight: 800;
 }
 .chat-thread {
   min-height: 0;
@@ -2286,6 +2287,15 @@ time,
     width: 23px;
     height: 23px;
   }
+  .sidebar-review-counter {
+    position: absolute;
+    top: 0.2rem;
+    right: 0.2rem;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.2rem;
+    font-size: 0.6rem;
+  }
   .sidebar-subnav {
     margin-left: 0;
     padding-left: 0;
@@ -2301,11 +2311,6 @@ time,
   .operations-board,
   .settings-grid {
     grid-template-columns: 1fr;
-  }
-  .operations-rail {
-    border-left: 0;
-    border-top: var(--line);
-    padding: 1.5rem 0 0;
   }
   .review-split {
     grid-template-columns: 1fr;
@@ -2526,6 +2531,9 @@ time,
     flex-direction: column;
     gap: 1rem;
   }
+  .page-header > div:first-child {
+    min-height: 0;
+  }
   .page-header h1 {
     font-size: 2.6rem;
   }
@@ -2597,11 +2605,7 @@ time,
   }
   .chat-layout {
     height: calc(100vh - 68px);
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-  .chat-header {
-    align-items: flex-start;
-    flex-direction: column;
+    grid-template-rows: minmax(0, 1fr);
   }
   .composer-model-controls {
     width: 100%;
@@ -2610,7 +2614,7 @@ time,
     flex: 1 1 0;
   }
   .chat-viewport {
-    padding: 1rem;
+    padding: 4rem 1rem 1rem;
   }
   .chat-empty h2 {
     font-size: 3.2rem;

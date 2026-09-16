@@ -1,5 +1,5 @@
 import { Button, Field, PageHeader, ProgressBar, StatusStamp, Textarea } from "@iom/ui";
-import { FileArrowUp, Files, Warning } from "@phosphor-icons/react";
+import { ClockCounterClockwise, FileArrowUp, Files, Pulse, Warning } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { type DragEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import { useUploadManager } from "@/features/upload-manager";
@@ -69,11 +69,7 @@ function UploadsPage() {
   }
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow="INGESTION / BATCH"
-        title="Upload dokumen"
-        description="Proses unggahan massal"
-      />
+      <PageHeader title="Upload dokumen" />
       <form className="upload-workbench" onSubmit={submit}>
         <button
           type="button"
@@ -127,7 +123,9 @@ function UploadsPage() {
       {manager.uploads.length ? (
         <section>
           <div className="section-heading">
-            <span>LIVE</span>
+            <span aria-hidden="true" title="Upload aktif">
+              <Pulse weight="bold" />
+            </span>
             <div>
               <h2>Upload aktif</h2>
               <p>Tetap aktif antarlaman</p>
@@ -149,7 +147,9 @@ function UploadsPage() {
       ) : null}
       <section>
         <div className="section-heading">
-          <span>HISTORY</span>
+          <span aria-hidden="true" title="Riwayat unggahan">
+            <ClockCounterClockwise weight="bold" />
+          </span>
           <div>
             <h2>Batch tersimpan</h2>
             <p>Tersimpan setelah refresh</p>

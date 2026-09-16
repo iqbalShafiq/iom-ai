@@ -1,5 +1,5 @@
-import { Metric, PageHeader, Panel, ProgressBar, StatusStamp } from "@iom/ui";
-import { ArrowRight, ShieldWarning } from "@phosphor-icons/react";
+import { Button, PageHeader, Panel, ProgressBar } from "@iom/ui";
+import { ArrowRight, UploadSimple } from "@phosphor-icons/react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { apiFetch } from "@/lib/api";
 import type { IomVersionRow, UploadBatchRow } from "@/lib/types";
@@ -9,38 +9,39 @@ export const Route = createFileRoute("/_app/hr/")({
     if (context.user.role !== "HR_ADMIN") throw new Error("FORBIDDEN");
   },
   loader: async () => {
-    const [uploads, documents, overlaps] = await Promise.all([
+    const [uploads, documents] = await Promise.all([
       apiFetch<{ batches: UploadBatchRow[] }>("/uploads/batches"),
       apiFetch<{ versions: IomVersionRow[] }>("/iom"),
-      apiFetch<{ runs: Array<{ id: string; status: string; createdAt: string }> }>("/overlap/runs"),
     ]);
-    return { uploads, documents, overlaps };
+    return { uploads, documents };
   },
   component: HrOverview,
 });
 
 function HrOverview() {
-  const { uploads, documents, overlaps } = Route.useLoaderData();
-  const files = uploads.batches.flatMap((batch) => batch.files);
+  const { uploads, documents } = Route.useLoaderData();
   const reviewCount = documents.versions.filter((item) => item.status === "IN_REVIEW").length;
-  const activeCount = documents.versions.filter((item) => item.status === "PUBLISHED").length;
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow="HR OPERATIONS / LIVE"
-        title="Kendali IOM"
-        description="Prioritas operasional terkini"
-      />
+      <PageHeader title="Overview" />
       <div className="operations-board">
         <section className="operations-main">
           <div className="section-heading">
-            <span>01</span>
+            <span aria-hidden="true" title="Upload berjalan">
+              <UploadSimple weight="bold" />
+            </span>
             <div>
               <h2>Upload berjalan</h2>
               <p>Tetap diproses otomatis</p>
             </div>
-            <Link to="/hr/documents/upload">
-              Buka semua <ArrowRight />
+            <Link className="section-heading__button-link" to="/hr/documents/confidentiality">
+              <Button
+                type="button"
+                tabIndex={-1}
+                rightIcon={<ArrowRight aria-hidden weight="bold" />}
+              >
+                {reviewCount} dokumen perlu review HR
+              </Button>
             </Link>
           </div>
           {uploads.batches.slice(0, 4).map((batch) => {
@@ -66,43 +67,7 @@ function HrOverview() {
               Belum ada batch. Upload dokumen pertama untuk memulai pipeline.
             </div>
           ) : null}
-          <div className="section-heading section-heading--second">
-            <span>02</span>
-            <div>
-              <h2>Antrean review</h2>
-              <p>Periksa konflik individual</p>
-            </div>
-            <Link to="/hr/documents/confidentiality">
-              Tinjau <ArrowRight />
-            </Link>
-          </div>
-          <div className="review-stripe">
-            <ShieldWarning size={30} weight="bold" />
-            <strong>{reviewCount}</strong>
-            <span>dokumen menunggu keputusan HR</span>
-          </div>
         </section>
-        <aside className="operations-rail">
-          <span className="rail-title">STATUS SISTEM</span>
-          <Metric label="IOM aktif" value={activeCount} detail="tersedia untuk retrieval" />
-          <Metric
-            label="File diproses"
-            value={files.filter((file) => !["COMPLETED", "FAILED"].includes(file.stage)).length}
-            detail="seluruh batch"
-          />
-          <Metric label="Overlap runs" value={overlaps.runs.length} detail="riwayat analisis" />
-          <div className="health-list">
-            <span>
-              <i /> API <StatusStamp status="ONLINE" />
-            </span>
-            <span>
-              <i /> Queue{" "}
-              <StatusStamp
-                status={files.some((file) => file.stage === "FAILED") ? "CHECK" : "HEALTHY"}
-              />
-            </span>
-          </div>
-        </aside>
       </div>
     </div>
   );

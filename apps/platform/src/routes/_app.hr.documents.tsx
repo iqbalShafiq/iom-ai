@@ -16,9 +16,7 @@ function DocumentsPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="CORPUS / ALL VERSIONS"
         title="Dokumen IOM"
-        description="Riwayat seluruh versi"
         actions={
           <Link to="/hr/documents/upload">
             <Button>

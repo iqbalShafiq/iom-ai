@@ -23,8 +23,21 @@ import {
   useState,
 } from "react";
 
-export function Button({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button className={clsx("ui-button", className)} {...props} />;
+export type ButtonVariant = "primary" | "secondary";
+
+export function Button({
+  className,
+  variant = "primary",
+  rightIcon,
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; rightIcon?: ReactNode }) {
+  return (
+    <button className={clsx("ui-button", `ui-button--${variant}`, className)} {...props}>
+      {children}
+      {rightIcon}
+    </button>
+  );
 }
 
 export function IconButton({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {

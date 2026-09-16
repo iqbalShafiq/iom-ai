@@ -93,9 +93,7 @@ function OverlapPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="HYBRID SEARCH / HUMAN DECISION"
         title="Analisis overlap"
-        description="Bandingkan aturan terkait"
         actions={
           <div className="inline-control">
             <Select value={candidate} onChange={(event) => setCandidate(event.target.value)}>

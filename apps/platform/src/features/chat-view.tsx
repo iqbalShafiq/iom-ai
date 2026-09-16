@@ -9,7 +9,7 @@ import {
   useMessagePart,
 } from "@anvia/react-ui";
 import type { ModelOption } from "@iom/contracts";
-import { Select, SelectOption } from "@iom/ui";
+import { IconButton, Select, SelectOption } from "@iom/ui";
 import {
   ArrowDown,
   Brain,
@@ -17,7 +17,9 @@ import {
   MagnifyingGlass,
   PaperPlaneTilt,
   Stop,
+  X,
 } from "@phosphor-icons/react";
+import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiUrl } from "@/lib/api";
 import type { Conversation } from "@/lib/types";
@@ -170,6 +172,8 @@ export function ChatView(props: {
     initialPreference?.effort ?? props.conversation.reasoningEffort,
   );
   const latestRunFailedRef = useRef(false);
+  const navigate = useNavigate();
+  const [isClosing, setIsClosing] = useState(false);
   // The "Ke terbaru" action is a viewport-level affordance: it appears only
   // while the newest content is out of view (scrolled up) and sits at the
   // bottom center, above the composer. Auto-scroll during streaming keeps the
@@ -252,6 +256,11 @@ export function ChatView(props: {
     ],
   });
   const isRunning = chat.status === "submitted" || chat.status === "streaming";
+  const closeConversation = () => {
+    if (isClosing) return;
+    setIsClosing(true);
+    window.setTimeout(() => void navigate({ to: "/chat" }), 180);
+  };
   const submit = async (input: string): Promise<void> => {
     if (!input.trim() || isRunning) return;
     if (latestRunFailedRef.current) {
@@ -277,15 +286,17 @@ export function ChatView(props: {
   }
   return (
     <ChatProvider controller={chat}>
-      <div className="chat-layout">
-        <header className="chat-header">
-          <div>
-            <span className="scope-stamp">
-              {props.conversation.accessScope === "HR" ? "HR SCOPE" : "EMPLOYEE SAFE"}
-            </span>
-            <h1>Percakapan IOM</h1>
-          </div>
-        </header>
+      <div className="chat-layout" data-closing={isClosing ? "true" : undefined}>
+        <IconButton
+          className="chat-close"
+          type="button"
+          aria-label="Tutup percakapan"
+          title="Tutup percakapan"
+          disabled={isClosing}
+          onClick={closeConversation}
+        >
+          <X size={20} weight="bold" aria-hidden />
+        </IconButton>
         <ThreadPrimitive.Root className="chat-thread">
           <ThreadPrimitive.Viewport
             className="chat-viewport"
