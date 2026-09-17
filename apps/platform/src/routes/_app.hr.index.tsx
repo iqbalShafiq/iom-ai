@@ -1,6 +1,6 @@
 import { Button, PageHeader, Panel, ProgressBar } from "@iom/ui";
 import { ArrowRight, UploadSimple } from "@phosphor-icons/react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { apiFetch } from "@/lib/api";
 import type { IomVersionRow, UploadBatchRow } from "@/lib/types";
 
@@ -20,6 +20,7 @@ export const Route = createFileRoute("/_app/hr/")({
 
 function HrOverview() {
   const { uploads, documents } = Route.useLoaderData();
+  const navigate = useNavigate();
   const reviewCount = documents.versions.filter((item) => item.status === "IN_REVIEW").length;
   return (
     <div className="page-stack">
@@ -34,15 +35,13 @@ function HrOverview() {
               <h2>Upload berjalan</h2>
               <p>Tetap diproses otomatis</p>
             </div>
-            <Link className="section-heading__button-link" to="/hr/documents/confidentiality">
-              <Button
-                type="button"
-                tabIndex={-1}
-                rightIcon={<ArrowRight aria-hidden weight="bold" />}
-              >
-                {reviewCount} dokumen perlu review HR
-              </Button>
-            </Link>
+            <Button
+              type="button"
+              onClick={() => void navigate({ to: "/hr/documents/confidentiality" })}
+              rightIcon={<ArrowRight aria-hidden weight="bold" />}
+            >
+              {reviewCount} perlu review HR
+            </Button>
           </div>
           {uploads.batches.slice(0, 4).map((batch) => {
             const progress = batch.files.length

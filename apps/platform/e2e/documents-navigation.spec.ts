@@ -35,7 +35,7 @@ test("document tools use nested navigation and routes", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Overview" })).toBeVisible();
   const overviewSections = page.locator(".operations-main h2");
   await expect(overviewSections.nth(0)).toHaveText("Upload berjalan");
-  await expect(page.locator(".section-heading__button-link")).toBeVisible();
+  await expect(page.getByRole("button", { name: /perlu review HR/ })).toBeVisible();
   await expect(page.getByText("Buka semua")).toHaveCount(0);
 
   const navigation = page.getByRole("navigation", { name: "Navigasi utama" });

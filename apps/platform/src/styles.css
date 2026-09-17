@@ -1258,7 +1258,7 @@ time,
   color: var(--muted);
   font-size: 0.86rem;
 }
-.section-heading > a:not(.section-heading__button-link) {
+.section-heading > a {
   display: flex;
   gap: 0.4rem;
   align-items: center;
@@ -1266,9 +1266,7 @@ time,
   border-bottom: 1.5px solid var(--ink);
   padding-bottom: 0.2rem;
 }
-/* The action is a real link wrapping a button; the button owns the whole box. */
-.section-heading__button-link {
-  display: flex;
+.section-heading > .ui-button {
   white-space: nowrap;
 }
 .batch-row {
@@ -1403,6 +1401,7 @@ time,
 .sticky-review-bar svg,
 .overlap-runs > section > header svg,
 .section-heading > a svg,
+.section-heading > .ui-button svg,
 .tool-card__header svg,
 .reasoning-status svg,
 .reasoning-card summary svg {
@@ -2540,7 +2539,8 @@ time,
   .section-heading {
     grid-template-columns: 40px minmax(0, 1fr);
   }
-  .section-heading > a {
+  .section-heading > a,
+  .section-heading > .ui-button {
     grid-column: 2;
     justify-self: start;
   }

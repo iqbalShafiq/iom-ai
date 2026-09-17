@@ -62,6 +62,19 @@ test("model and reasoning options can be selected by pointer and keyboard", asyn
   await expect(reasoning).toHaveText("low");
 
   await reasoning.click();
+  const listbox = page.getByRole("listbox");
+  await expect(listbox).toBeVisible();
+  const triggerBox = await reasoning.boundingBox();
+  const menuBox = await listbox.boundingBox();
+  expect(triggerBox).not.toBeNull();
+  expect(menuBox).not.toBeNull();
+  if (triggerBox && menuBox) {
+    expect(Math.abs(menuBox.x - triggerBox.x)).toBeLessThanOrEqual(1);
+    const triggerBottom = triggerBox.y + triggerBox.height;
+    const menuBottom = menuBox.y + menuBox.height;
+    const gap = menuBox.y >= triggerBottom ? menuBox.y - triggerBottom : triggerBox.y - menuBottom;
+    expect(gap).toBeLessThanOrEqual(8);
+  }
   await page.getByRole("option", { name: "xhigh" }).click();
   await expect(reasoning).toHaveText("xhigh");
   await expect(reasoning).toBeFocused();

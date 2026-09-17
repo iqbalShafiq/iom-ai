@@ -19,9 +19,11 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 
 export type ButtonVariant = "primary" | "secondary";
 
@@ -151,9 +153,15 @@ export function Select({
   function openMenu() {
     setOpen(true);
     setActiveIndex(selectedIndex);
-    // Measure after the hidden menu renders, then position and show it.
-    requestAnimationFrame(placeMenu);
   }
+
+  // The menu is mounted by the state update above. Position it after that DOM
+  // commit, before the browser paints, so an unpositioned fixed menu never
+  // flashes at its static fallback position.
+  useLayoutEffect(() => {
+    if (!open) return;
+    placeMenu();
+  }, [open, placeMenu]);
 
   // Keep the menu glued to the trigger while open: the thread can scroll and
   // the window can resize, which would otherwise leave the fixed menu hanging
@@ -174,7 +182,12 @@ export function Select({
     if (!open) return;
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
-      if (target instanceof Node && rootRef.current?.contains(target)) return;
+      if (
+        target instanceof Node &&
+        (rootRef.current?.contains(target) || menuRef.current?.contains(target))
+      ) {
+        return;
+      }
       close();
     };
     document.addEventListener("pointerdown", handlePointerDown);
@@ -288,42 +301,47 @@ export function Select({
         <span className="ui-select__value">{entries[selectedIndex]?.children ?? ""}</span>
         <CaretDown aria-hidden weight="bold" className="ui-select__chevron" />
       </button>
-      {open && entries.length > 0 ? (
-        <div
-          ref={menuRef}
-          id={listboxId}
-          role="listbox"
-          tabIndex={-1}
-          className={clsx("ui-select__menu", `ui-select__menu--${placement}`)}
-          style={{
-            visibility: positioned ? "visible" : "hidden",
-            top: anchor ? `${anchor.top}px` : undefined,
-            left: anchor ? `${anchor.left}px` : undefined,
-            minWidth: anchor ? `${anchor.width}px` : undefined,
-          }}
-          onKeyDown={handleMenuKeyDown}
-        >
-          {entries.map((entry, index) => {
-            const selected = index === selectedIndex;
-            return (
-              <button
-                key={entry.value}
-                id={`${listboxId}-option-${index}`}
-                type="button"
-                role="option"
-                aria-selected={selected}
-                data-active={activeIndex === index}
-                className="ui-select__option"
-                onClick={() => choose(entry)}
-                onMouseEnter={() => setActiveIndex(index)}
-              >
-                {selected ? <Check weight="bold" aria-hidden className="ui-select__check" /> : null}
-                {entry.children}
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      {open && entries.length > 0 && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={menuRef}
+              id={listboxId}
+              role="listbox"
+              tabIndex={-1}
+              className={clsx("ui-select__menu", `ui-select__menu--${placement}`)}
+              style={{
+                visibility: positioned ? "visible" : "hidden",
+                top: anchor ? `${anchor.top}px` : undefined,
+                left: anchor ? `${anchor.left}px` : undefined,
+                minWidth: anchor ? `${anchor.width}px` : undefined,
+              }}
+              onKeyDown={handleMenuKeyDown}
+            >
+              {entries.map((entry, index) => {
+                const selected = index === selectedIndex;
+                return (
+                  <button
+                    key={entry.value}
+                    id={`${listboxId}-option-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    data-active={activeIndex === index}
+                    className="ui-select__option"
+                    onClick={() => choose(entry)}
+                    onMouseEnter={() => setActiveIndex(index)}
+                  >
+                    {selected ? (
+                      <Check weight="bold" aria-hidden className="ui-select__check" />
+                    ) : null}
+                    {entry.children}
+                  </button>
+                );
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
