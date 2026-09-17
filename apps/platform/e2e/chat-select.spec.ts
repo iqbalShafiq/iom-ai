@@ -20,6 +20,86 @@ const conversation = {
   updatedAt: "2026-09-16T00:00:00.000Z",
 };
 
+const streamBody = [
+  {
+    type: "stream_start",
+    protocol: "anvia.client.v3",
+    streamId: "test-stream",
+    eventId: 0,
+    resumable: false,
+  },
+  {
+    type: "stream_event",
+    streamId: "test-stream",
+    eventId: 1,
+    event: { type: "run_start", runId: "run-1", source: "agent" },
+  },
+  {
+    type: "stream_event",
+    streamId: "test-stream",
+    eventId: 2,
+    event: {
+      type: "message_start",
+      runId: "run-1",
+      messageId: "assistant-1",
+      role: "assistant",
+      turn: 1,
+    },
+  },
+  {
+    type: "stream_event",
+    streamId: "test-stream",
+    eventId: 3,
+    event: {
+      type: "text_start",
+      runId: "run-1",
+      messageId: "assistant-1",
+      partId: "text-1",
+      turn: 1,
+    },
+  },
+  {
+    type: "stream_event",
+    streamId: "test-stream",
+    eventId: 4,
+    event: {
+      type: "text_delta",
+      runId: "run-1",
+      messageId: "assistant-1",
+      partId: "text-1",
+      delta: "Jawaban uji.",
+      turn: 1,
+    },
+  },
+  {
+    type: "stream_event",
+    streamId: "test-stream",
+    eventId: 5,
+    event: {
+      type: "text_end",
+      runId: "run-1",
+      messageId: "assistant-1",
+      partId: "text-1",
+      turn: 1,
+    },
+  },
+  {
+    type: "stream_event",
+    streamId: "test-stream",
+    eventId: 6,
+    event: { type: "message_end", runId: "run-1", messageId: "assistant-1", turn: 1 },
+  },
+  {
+    type: "stream_event",
+    streamId: "test-stream",
+    eventId: 7,
+    event: { type: "run_end", runId: "run-1", status: "completed", turn: 1 },
+  },
+  { type: "stream_end", streamId: "test-stream", eventId: 7, status: "completed" },
+]
+  .map((frame) => JSON.stringify(frame))
+  .join("\n");
+
 test.beforeEach(async ({ page }) => {
   await page.route("http://localhost:3001/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
@@ -40,8 +120,41 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: { conversations: [conversation] } });
       return;
     }
-    if (pathname === "/chat/conversations/chat-1") {
-      await route.fulfill({ json: { conversation: { ...conversation, messages: [] } } });
+    if (pathname.startsWith("/chat/conversations/")) {
+      const id = pathname.split("/").at(-1) ?? conversation.id;
+      await route.fulfill({ json: { conversation: { ...conversation, id, messages: [] } } });
+      return;
+    }
+    if (pathname === "/chat/stream") {
+      if (route.request().method() === "OPTIONS") {
+        await route.fulfill({
+          status: 204,
+          headers: {
+            "access-control-allow-headers": "content-type",
+            "access-control-allow-methods": "POST, OPTIONS",
+            "access-control-allow-origin": "http://localhost:5173",
+            "access-control-allow-credentials": "true",
+          },
+        });
+        return;
+      }
+      const body = JSON.parse(route.request().postData() ?? "{}") as {
+        metadata?: { conversationId?: string };
+      };
+      await route.fulfill({
+        status: 200,
+        headers: {
+          "access-control-allow-credentials": "true",
+          "access-control-allow-headers": "content-type",
+          "access-control-allow-methods": "POST, OPTIONS",
+          "access-control-allow-origin": "http://localhost:5173",
+          "access-control-expose-headers": "x-anvia-stream-protocol, x-iom-conversation-id",
+          "content-type": "application/x-ndjson",
+          "x-anvia-stream-protocol": "anvia.client.v3",
+          "x-iom-conversation-id": body.metadata?.conversationId ?? "",
+        },
+        body: streamBody,
+      });
       return;
     }
     if (pathname === "/ai/models") {
@@ -89,4 +202,60 @@ test("model and reasoning options can be selected by pointer and keyboard", asyn
   await page.getByRole("button", { name: "Tutup percakapan" }).click();
   await expect(page).toHaveURL(/\/chat$/);
   await expect(page.getByRole("heading", { name: "Chats" })).toBeVisible();
+});
+
+test("new chat stays local until the first message", async ({ page }) => {
+  let conversationPostCount = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/chat/conversations")) {
+      conversationPostCount += 1;
+    }
+  });
+
+  await page.goto("/chat");
+  await page.getByRole("button", { name: "Start Chat" }).click();
+
+  await expect(page).toHaveURL(/\/chat\/new(?:\?scope=EMPLOYEE)?$/);
+  await expect(page.getByRole("textbox", { name: "Pesan" })).toBeVisible();
+  expect(conversationPostCount).toBe(0);
+});
+
+test("first message replaces the draft URL without a route refresh", async ({ page }) => {
+  let detailRequestCount = 0;
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "GET" && pathname.startsWith("/chat/conversations/")) {
+      detailRequestCount += 1;
+    }
+  });
+
+  await page.goto("/chat");
+  await page.getByRole("button", { name: "Start Chat" }).click();
+  await expect(page).toHaveURL(/\/chat\/new(?:\?scope=EMPLOYEE)?$/);
+
+  await page.getByRole("textbox", { name: "Pesan" }).fill("Apa aturan cuti?");
+  const sendButton = page.getByRole("button", { name: "Kirim" });
+  await expect(sendButton).toHaveClass(/ui-button--primary/);
+  await sendButton.click();
+
+  await expect(page.getByText("Jawaban uji.")).toBeVisible();
+  const closeBox = await page.locator(".chat-close").boundingBox();
+  const viewportBox = await page.locator(".chat-viewport").boundingBox();
+  const bubbleBox = await page.locator('.message[data-author="user"]').boundingBox();
+  expect(closeBox).not.toBeNull();
+  expect(viewportBox).not.toBeNull();
+  expect(bubbleBox).not.toBeNull();
+  if (closeBox && viewportBox && bubbleBox) {
+    const closeBottom = closeBox.y + closeBox.height;
+    expect(viewportBox.y - closeBottom).toBeGreaterThanOrEqual(8);
+    expect(bubbleBox.y - closeBottom).toBeGreaterThanOrEqual(8);
+  }
+  await expect(page).toHaveURL(/\/chat\/[0-9a-f-]{36}$/);
+  expect(detailRequestCount).toBe(0);
+  const persistedPath = new URL(page.url()).pathname;
+  await page.reload();
+  await expect(page).toHaveURL(new RegExp(`${persistedPath.replaceAll("/", "\\/")}$`));
+  await expect(page.getByRole("textbox", { name: "Pesan" })).toBeVisible();
+  await page.getByRole("button", { name: "Tutup percakapan" }).click();
+  await expect(page).toHaveURL(/\/chat$/);
 });

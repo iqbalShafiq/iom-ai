@@ -2,6 +2,32 @@ import { describe, expect, it } from "vitest";
 import { persistChatTranscript } from "./chat-transcript.js";
 
 describe("persistChatTranscript", () => {
+  it("does not save an empty transcript", async () => {
+    const saved: unknown[] = [];
+
+    async function* events() {
+      yield {
+        runId: "run-empty",
+        type: "data" as const,
+        name: "stream_guard",
+        data: { status: "passed" },
+        transient: true,
+      };
+    }
+
+    for await (const _event of persistChatTranscript({
+      events: events(),
+      initialMessages: [],
+      save: async (messages) => {
+        saved.push(messages);
+      },
+    })) {
+      // Drain the stream so the final persistence hook runs.
+    }
+
+    expect(saved).toHaveLength(0);
+  });
+
   it("saves assistant answer text after the stream ends", async () => {
     const saved: unknown[] = [];
     async function* events() {

@@ -57,7 +57,8 @@ export async function* persistChatTranscript(options: {
     }
   } finally {
     try {
-      await options.save(uiMessagesToMessages(persistableMessages(ui)));
+      const messages = persistableMessages(ui);
+      if (messages.length > 0) await options.save(uiMessagesToMessages(messages));
     } catch {
       // Persistence must not fail the in-flight HTTP stream.
     }

@@ -23,21 +23,10 @@ function ChatLanding() {
   const [busy, setBusy] = useState(false);
   const { user } = useRouteContext({ from: "/_app" });
   if (pathname !== "/chat") return <Outlet />;
-  async function create(scope: "EMPLOYEE" | "HR" = "EMPLOYEE") {
+  async function openDraft(scope: "EMPLOYEE" | "HR" = "EMPLOYEE") {
     setBusy(true);
     try {
-      const { conversation } = await apiFetch<{ conversation: Conversation }>(
-        "/chat/conversations",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            accessScope: scope,
-            modelId: "gpt-5.6-luna",
-            reasoningEffort: "low",
-          }),
-        },
-      );
-      await navigate({ to: "/chat/$conversationId", params: { conversationId: conversation.id } });
+      await navigate({ to: "/chat/new", search: { scope } });
     } finally {
       setBusy(false);
     }
@@ -48,11 +37,11 @@ function ChatLanding() {
         title="Chats"
         actions={
           <div className="header-action-group">
-            <Button variant="secondary" disabled={busy} onClick={() => create("EMPLOYEE")}>
+            <Button variant="secondary" disabled={busy} onClick={() => openDraft("EMPLOYEE")}>
               <Plus weight="bold" /> {user.role === "HR_ADMIN" ? "Chat as Employee" : "Start Chat"}
             </Button>
             {user.role === "HR_ADMIN" ? (
-              <Button variant="primary" disabled={busy} onClick={() => create("HR")}>
+              <Button variant="primary" disabled={busy} onClick={() => openDraft("HR")}>
                 <Plus weight="bold" /> Chat as HR
               </Button>
             ) : null}

@@ -9,7 +9,7 @@ import {
   useMessagePart,
 } from "@anvia/react-ui";
 import type { ModelOption } from "@iom/contracts";
-import { IconButton, Select, SelectOption } from "@iom/ui";
+import { Button, IconButton, Select, SelectOption } from "@iom/ui";
 import {
   ArrowDown,
   Brain,
@@ -157,6 +157,7 @@ export function ChatView(props: {
   conversation: Conversation;
   storedMessages?: StoredMessage[];
   models: readonly ModelOption[];
+  isDraft?: boolean;
 }) {
   const initialMessages = useMemo(
     () => hydrateStoredChatMessages(props.storedMessages?.[0]?.content),
@@ -172,6 +173,8 @@ export function ChatView(props: {
     initialPreference?.effort ?? props.conversation.reasoningEffort,
   );
   const latestRunFailedRef = useRef(false);
+  const draftUrlReplacedRef = useRef(false);
+  const pendingDraftConversationIdRef = useRef<string | null>(null);
   const navigate = useNavigate();
   const [isClosing, setIsClosing] = useState(false);
   // The "Ke terbaru" action is a viewport-level affordance: it appears only
@@ -226,11 +229,38 @@ export function ChatView(props: {
     }),
     [props.conversation.id, props.conversation.accessScope, modelId, effort],
   );
+  const replaceDraftUrl = useCallback(
+    (conversationId: string) => {
+      if (!props.isDraft || draftUrlReplacedRef.current) return;
+      if (conversationId !== props.conversation.id) return;
+      const location = new URL(window.location.href);
+      location.pathname = `/chat/${conversationId}`;
+      location.search = "";
+      // TanStack History wraps the instance method and treats direct calls as
+      // navigations. Call the native prototype method so only the address bar
+      // changes; the in-flight draft controller must not remount or reload.
+      History.prototype.replaceState.call(
+        window.history,
+        window.history.state,
+        "",
+        `${location.pathname}${location.search}${location.hash}`,
+      );
+      draftUrlReplacedRef.current = true;
+    },
+    [props.conversation.id, props.isDraft],
+  );
   const transport = useMemo(
     () =>
       createHttpClientTransport({
         endpoint: apiUrl("/chat/stream"),
         format: "jsonl",
+        fetch: async (input, init) => {
+          const response = await globalThis.fetch(input, init);
+          if (response.ok) {
+            pendingDraftConversationIdRef.current = response.headers.get("x-iom-conversation-id");
+          }
+          return response;
+        },
         init: { credentials: "include" },
         body: ({ request, headers }) => {
           headers.set("content-type", "application/json");
@@ -255,6 +285,14 @@ export function ChatView(props: {
       },
     ],
   });
+  useEffect(() => {
+    if (!props.isDraft) return;
+    if (chat.status !== "ready" && chat.status !== "error") return;
+    const conversationId = pendingDraftConversationIdRef.current;
+    if (!conversationId) return;
+    pendingDraftConversationIdRef.current = null;
+    replaceDraftUrl(conversationId);
+  }, [chat.status, props.isDraft, replaceDraftUrl]);
   const isRunning = chat.status === "submitted" || chat.status === "streaming";
   const closeConversation = () => {
     if (isClosing) return;
@@ -433,8 +471,10 @@ export function ChatView(props: {
                   <Stop weight="fill" /> Hentikan
                 </ComposerPrimitive.Stop>
               ) : (
-                <ComposerPrimitive.Submit className="composer-action">
-                  <PaperPlaneTilt weight="bold" /> Kirim
+                <ComposerPrimitive.Submit asChild>
+                  <Button type="submit" variant="primary" className="composer-action">
+                    <PaperPlaneTilt weight="bold" /> Kirim
+                  </Button>
                 </ComposerPrimitive.Submit>
               )}
             </div>

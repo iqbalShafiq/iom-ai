@@ -21,19 +21,12 @@ import type { ServerConfig } from "@iom/config";
 import { type AccessScope, type ChatRunMetadata, chatRunMetadataSchema } from "@iom/contracts";
 import type { Database, Prisma } from "@iom/database";
 import type { Hono } from "hono";
-import { z } from "zod";
 import { audit } from "./audit.js";
 import { authMiddleware } from "./auth.js";
 import { persistChatTranscript } from "./chat-transcript.js";
 import { PrismaEvidenceAuthorizer } from "./evidence.js";
 import { rateLimit } from "./rate-limit.js";
 import type { AppBindings } from "./types.js";
-
-const conversationSchema = z.object({
-  accessScope: z.enum(["EMPLOYEE", "HR"]).default("EMPLOYEE"),
-  modelId: z.string().default("gpt-5.6-luna"),
-  reasoningEffort: z.string().default("low"),
-});
 
 async function deniedFingerprints(database: Database) {
   const decisions = await database.confidentialityDecision.findMany({
@@ -268,40 +261,18 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
   );
 
   app.get("/chat/conversations", async (context) => {
-    const conversations = await context.get("database").conversation.findMany({
-      where: { ownerId: context.get("actor").id },
+    const database = context.get("database");
+    // Remove legacy drafts when the owner returns to the list. The migration
+    // performs the same cleanup for all existing owners during deployment.
+    await database.conversation.deleteMany({
+      where: { ownerId: context.get("actor").id, messages: { none: {} } },
+    });
+    const conversations = await database.conversation.findMany({
+      where: { ownerId: context.get("actor").id, messages: { some: {} } },
       orderBy: { updatedAt: "desc" },
       take: 100,
     });
     return context.json({ conversations });
-  });
-
-  app.post("/chat/conversations", async (context) => {
-    const parsed = conversationSchema.safeParse(await context.req.json().catch(() => ({})));
-    if (!parsed.success) return context.json({ error: "Preferensi percakapan tidak valid." }, 400);
-    const actor = context.get("actor");
-    if (parsed.data.accessScope === "HR" && actor.role !== "HR_ADMIN")
-      return context.json({ error: "Scope HR tidak tersedia." }, 403);
-    const selection = resolveModelSelection(
-      parsed.data.modelId,
-      parsed.data.reasoningEffort,
-      catalog,
-    );
-    const policy = await context.get("database").confidentialityPolicy.findFirst({
-      where: { status: "ACTIVE" },
-      orderBy: { version: "desc" },
-    });
-    if (!policy) return context.json({ error: "Policy kerahasiaan aktif belum tersedia." }, 409);
-    const conversation = await context.get("database").conversation.create({
-      data: {
-        ownerId: actor.id,
-        accessScope: parsed.data.accessScope,
-        modelId: selection.modelId,
-        reasoningEffort: selection.reasoningEffort,
-        corpusPolicyVersion: policy.version,
-      },
-    });
-    return context.json({ conversation }, 201);
   });
 
   app.get("/chat/conversations/:conversationId", async (context) => {
@@ -346,29 +317,80 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
       if (!metadata.success) return context.json({ error: "Metadata chat tidak valid." }, 400);
       const actor = context.get("actor");
       const database = context.get("database");
-      const conversation = await database.conversation.findFirst({
-        where: { id: metadata.data.conversationId, ownerId: actor.id },
-      });
-      if (!conversation) return context.json({ error: "Percakapan tidak ditemukan." }, 404);
-      if (conversation.accessScope !== metadata.data.accessScope)
-        return context.json({ error: "Scope percakapan tidak dapat diubah." }, 409);
-      if (conversation.accessScope === "HR" && actor.role !== "HR_ADMIN")
+      const sanitizedMessages = sanitizeIomChatHistory(request.messages);
+      if (!sanitizedMessages.some((message) => message.role === "user")) {
+        return context.json({ error: "Pesan chat tidak boleh kosong." }, 422);
+      }
+      if (metadata.data.accessScope === "HR" && actor.role !== "HR_ADMIN")
         return context.json({ error: "Scope HR tidak tersedia." }, 403);
       const selection = resolveModelSelection(
         metadata.data.modelId,
         metadata.data.reasoningEffort,
         catalog,
       );
+      let conversation = await database.conversation.findFirst({
+        where: { id: metadata.data.conversationId, ownerId: actor.id },
+      });
+      let conversationIsNew = false;
+      if (!conversation) {
+        const existing = await database.conversation.findUnique({
+          where: { id: metadata.data.conversationId },
+          select: { id: true },
+        });
+        if (existing) return context.json({ error: "Percakapan tidak ditemukan." }, 404);
+        conversationIsNew = true;
+      }
       const currentPolicy = await database.confidentialityPolicy.findFirst({
         where: { status: "ACTIVE" },
         orderBy: { version: "desc" },
       });
-      if (!currentPolicy || currentPolicy.version !== conversation.corpusPolicyVersion) {
+      if (!currentPolicy)
+        return context.json({ error: "Policy kerahasiaan aktif belum tersedia." }, 409);
+      if (conversation && conversation.accessScope !== metadata.data.accessScope)
+        return context.json({ error: "Scope percakapan tidak dapat diubah." }, 409);
+      if (conversation?.accessScope === "HR" && actor.role !== "HR_ADMIN")
+        return context.json({ error: "Scope HR tidak tersedia." }, 403);
+      if (conversation && currentPolicy.version !== conversation.corpusPolicyVersion) {
         return context.json(
           { error: "Percakapan memakai generasi corpus lama. Buat percakapan baru." },
           409,
         );
       }
+      const requestMessage = {
+        role: "request",
+        content: request.messages as unknown as Prisma.InputJsonValue,
+        modelId: selection.modelId,
+        reasoningEffort: selection.reasoningEffort,
+      } as const;
+      if (conversationIsNew) {
+        conversation = await database.$transaction(async (transaction) => {
+          const created = await transaction.conversation.create({
+            data: {
+              id: metadata.data.conversationId,
+              ownerId: actor.id,
+              accessScope: metadata.data.accessScope,
+              modelId: selection.modelId,
+              reasoningEffort: selection.reasoningEffort,
+              corpusPolicyVersion: currentPolicy.version,
+            },
+          });
+          await transaction.conversationMessage.create({
+            data: { conversationId: created.id, ...requestMessage },
+          });
+          return created;
+        });
+      } else if (conversation) {
+        await database.$transaction([
+          database.conversation.update({
+            where: { id: conversation.id },
+            data: { modelId: selection.modelId, reasoningEffort: selection.reasoningEffort },
+          }),
+          database.conversationMessage.create({
+            data: { conversationId: conversation.id, ...requestMessage },
+          }),
+        ]);
+      }
+      if (!conversation) return context.json({ error: "Percakapan tidak ditemukan." }, 404);
       const { index } = await knowledge(database);
       const accessScope = conversation.accessScope as AccessScope;
       const agent = createIomAgent({
@@ -412,7 +434,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
         },
         start: () =>
           agent.stream({
-            messages: sanitizeIomChatHistory(request.messages),
+            messages: sanitizedMessages,
             abortSignal: context.req.raw.signal,
           }),
       });
@@ -478,20 +500,8 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
         reasoningEffort: selection.reasoningEffort,
         policyVersion: currentPolicy.version,
       });
-      await database.conversation.update({
-        where: { id: conversation.id },
-        data: { modelId: selection.modelId, reasoningEffort: selection.reasoningEffort },
-      });
-      await database.conversationMessage.create({
-        data: {
-          conversationId: conversation.id,
-          role: "request",
-          content: request.messages as unknown as Prisma.InputJsonValue,
-          modelId: selection.modelId,
-          reasoningEffort: selection.reasoningEffort,
-        },
-      });
       return createClientStreamResponse({
+        headers: { "x-iom-conversation-id": conversation.id },
         events: persistChatTranscript({
           events: projected,
           initialMessages: request.messages,

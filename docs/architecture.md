@@ -36,6 +36,12 @@ internal model payload.
 
 ## Alur chat
 
+Chat baru dimulai sebagai draft lokal di browser dan tidak membuat row `Conversation`. Pada pesan
+pertama yang memiliki teks user, API memvalidasi actor, scope, model, policy, dan corpus lalu
+membuat conversation beserta request message secara atomik. Draft yang ditutup tanpa pesan tidak
+meninggalkan session kosong; setelah commit, response memberi session ID agar browser mengganti URL
+secara in-place tanpa remount stream. Migration cleanup juga menghapus row legacy tanpa message.
+
 Model dan reasoning dipilih dari allowlist server. Scoped `search_iom` membentuk filter dari actor,
 bukan argumen model. Agent maksimal empat turn dan harus abstain tanpa evidence. Anvia Client
 Protocol v3 memproyeksikan reasoning summary, tool status, source, dan answer ke JSONL. Rolling

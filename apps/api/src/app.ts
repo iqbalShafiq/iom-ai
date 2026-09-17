@@ -21,7 +21,7 @@ export function createApp(database: Database, config: ServerConfig) {
       credentials: true,
       allowHeaders: ["Content-Type", "X-CSRF-Token"],
       // @anvia/client validates this protocol header on streamed responses.
-      exposeHeaders: ["x-anvia-stream-protocol"],
+      exposeHeaders: ["x-anvia-stream-protocol", "x-iom-conversation-id"],
       allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     }),
   );
