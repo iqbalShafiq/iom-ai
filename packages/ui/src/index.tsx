@@ -1,8 +1,19 @@
-import { CaretDown, Check, CheckCircle, WarningCircle, X, XCircle } from "@phosphor-icons/react";
+import {
+  CalendarBlank,
+  CaretDown,
+  CaretLeft,
+  CaretRight,
+  Check,
+  CheckCircle,
+  WarningCircle,
+  X,
+  XCircle,
+} from "@phosphor-icons/react";
 import clsx from "clsx";
 import type {
   ButtonHTMLAttributes,
   ChangeEvent,
+  ChangeEventHandler,
   HTMLAttributes,
   InputHTMLAttributes,
   OptionHTMLAttributes,
@@ -570,6 +581,455 @@ export function Select({
                   </button>
                 );
               })}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}
+
+type CalendarDate = Date;
+
+function parseDateValue(value: string | undefined) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (year === undefined || month === undefined || day === undefined) return null;
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+    ? date
+    : null;
+}
+
+function normalizeDateValue(value: string | undefined) {
+  return parseDateValue(value) ? (value ?? "") : "";
+}
+
+function formatDateDisplay(value: string) {
+  const date = parseDateValue(value);
+  return date
+    ? date.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })
+    : "";
+}
+
+function toDateValue(date: CalendarDate) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function startOfMonth(date: CalendarDate) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addDays(date: CalendarDate, amount: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function isSameDay(left: CalendarDate, right: CalendarDate) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function monthDays(date: CalendarDate) {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+
+export type DatePickerProps = Omit<
+  InputHTMLAttributes<HTMLInputElement>,
+  "type" | "value" | "defaultValue" | "onChange" | "name" | "readOnly"
+> & {
+  name?: string;
+  value?: string;
+  defaultValue?: string;
+  onChange?: ChangeEventHandler<HTMLInputElement>;
+  clearable?: boolean;
+};
+
+/**
+ * Accessible date picker with a styled calendar popup and a native date input
+ * kept in the form for reliable submission and browser validation.
+ */
+export function DatePicker({
+  className,
+  name,
+  value,
+  defaultValue,
+  onChange,
+  clearable = false,
+  id,
+  disabled,
+  required,
+  placeholder = "Pilih tanggal",
+  "aria-label": ariaLabel,
+  "aria-describedby": ariaDescribedBy,
+  ...inputProps
+}: DatePickerProps) {
+  const generatedId = useId();
+  const controlId = id ?? generatedId;
+  const dialogId = `${controlId}-calendar`;
+  const nativeRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const isControlled = value !== undefined;
+  const initialValue = normalizeDateValue(value ?? defaultValue);
+  const [uncontrolledValue, setUncontrolledValue] = useState(initialValue);
+  const currentValue = normalizeDateValue(isControlled ? value : uncontrolledValue);
+  const initialDate = parseDateValue(currentValue) ?? new Date();
+  const [open, setOpen] = useState(false);
+  const [viewDate, setViewDate] = useState(() => startOfMonth(initialDate));
+  const [activeDate, setActiveDate] = useState<CalendarDate>(initialDate);
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [placement, setPlacement] = useState<"below" | "above">("below");
+  const [positioned, setPositioned] = useState(false);
+
+  useEffect(() => {
+    if (!isControlled) return;
+    const next = normalizeDateValue(value);
+    const parsed = parseDateValue(next);
+    if (parsed) {
+      setActiveDate(parsed);
+      setViewDate(startOfMonth(parsed));
+    }
+  }, [isControlled, value]);
+
+  const close = useCallback((restoreFocus = false) => {
+    setOpen(false);
+    setAnchor(null);
+    setPlacement("below");
+    setPositioned(false);
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
+  }, []);
+
+  const placePopup = useCallback(() => {
+    const trigger = triggerRef.current ?? inputRef.current;
+    const dialog = dialogRef.current;
+    if (!trigger || !dialog) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 8;
+    const popupWidth = Math.min(320, window.innerWidth - viewportPadding * 2);
+    const popupHeight = dialog.getBoundingClientRect().height;
+    const roomBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const roomAbove = rect.top - viewportPadding;
+    const flip = roomBelow < popupHeight && roomAbove > popupHeight * 0.6;
+    const maxTop = Math.max(viewportPadding, window.innerHeight - popupHeight - viewportPadding);
+    const top = flip
+      ? Math.max(viewportPadding, rect.top - popupHeight - 4)
+      : Math.min(maxTop, Math.max(viewportPadding, rect.bottom + 4));
+    const left = Math.min(
+      Math.max(viewportPadding, rect.left),
+      window.innerWidth - popupWidth - viewportPadding,
+    );
+    setPlacement(flip ? "above" : "below");
+    setAnchor({ top, left, width: popupWidth });
+    setPositioned(true);
+  }, []);
+
+  function openCalendar() {
+    const selected = parseDateValue(currentValue) ?? new Date();
+    setActiveDate(selected);
+    setViewDate(startOfMonth(selected));
+    setPositioned(false);
+    setOpen(true);
+  }
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    placePopup();
+    requestAnimationFrame(() => {
+      dialogRef.current
+        ?.querySelector<HTMLButtonElement>(`[data-date="${toDateValue(activeDate)}"]`)
+        ?.focus();
+    });
+  }, [open, activeDate, placePopup]);
+
+  useEffect(() => {
+    if (!open) return;
+    const reposition = () => requestAnimationFrame(placePopup);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, placePopup]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Node &&
+        (rootRef.current?.contains(target) || dialogRef.current?.contains(target))
+      ) {
+        return;
+      }
+      close();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open, close]);
+
+  function handleNativeChange(event: ChangeEvent<HTMLInputElement>) {
+    const next = normalizeDateValue(event.currentTarget.value);
+    if (!isControlled) setUncontrolledValue(next);
+    onChange?.(event);
+  }
+
+  function commit(next: string) {
+    const normalized = normalizeDateValue(next);
+    if (!isControlled) setUncontrolledValue(normalized);
+    const native = nativeRef.current;
+    if (native) {
+      native.value = normalized;
+      native.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    const parsed = parseDateValue(normalized);
+    if (parsed) {
+      setActiveDate(parsed);
+      setViewDate(startOfMonth(parsed));
+    }
+    close(true);
+  }
+
+  function moveActive(amount: number) {
+    const next = addDays(activeDate, amount);
+    setActiveDate(next);
+    if (next.getMonth() !== viewDate.getMonth() || next.getFullYear() !== viewDate.getFullYear()) {
+      setViewDate(startOfMonth(next));
+    }
+  }
+
+  function changeMonth(amount: number) {
+    const nextView = new Date(viewDate.getFullYear(), viewDate.getMonth() + amount, 1);
+    const nextActive = new Date(
+      nextView.getFullYear(),
+      nextView.getMonth(),
+      Math.min(activeDate.getDate(), monthDays(nextView)),
+    );
+    setViewDate(nextView);
+    setActiveDate(nextActive);
+  }
+
+  function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!open) openCalendar();
+    }
+    if (event.key === "Escape" && open) {
+      event.preventDefault();
+      close(true);
+    }
+  }
+
+  function handleDayKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      moveActive(1);
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveActive(-1);
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveActive(7);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveActive(-7);
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      const dayOfWeek = (activeDate.getDay() + 6) % 7;
+      moveActive(event.key === "Home" ? -dayOfWeek : 6 - dayOfWeek);
+    } else if (event.key === "PageUp" || event.key === "PageDown") {
+      event.preventDefault();
+      const amount = event.key === "PageUp" ? -1 : 1;
+      changeMonth(event.shiftKey ? amount * 12 : amount);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      commit(toDateValue(activeDate));
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      close(true);
+    }
+  }
+
+  const firstDay = startOfMonth(viewDate);
+  const gridStart = addDays(firstDay, -((firstDay.getDay() + 6) % 7));
+  const days = Array.from({ length: 42 }, (_, index) => addDays(gridStart, index));
+  const weeks = Array.from({ length: 6 }, (_, index) => {
+    const weekDays = days.slice(index * 7, index * 7 + 7);
+    return { days: weekDays, key: toDateValue(weekDays[0] ?? firstDay) };
+  });
+  const selectedDate = parseDateValue(currentValue);
+  const today = new Date();
+  const displayValue = formatDateDisplay(currentValue);
+  const triggerLabel = displayValue ? `Ubah tanggal, ${displayValue}` : "Pilih tanggal";
+
+  return (
+    <div ref={rootRef} className={clsx("ui-date-picker", className)}>
+      <input
+        ref={nativeRef}
+        className="ui-date-picker__native"
+        type="date"
+        name={name}
+        id={`${controlId}-native`}
+        value={currentValue}
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={handleNativeChange}
+      />
+      <div className="ui-date-picker__control">
+        <input
+          {...inputProps}
+          ref={inputRef}
+          id={controlId}
+          type="text"
+          value={displayValue}
+          placeholder={placeholder}
+          readOnly
+          required={required}
+          disabled={disabled}
+          aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
+          aria-haspopup="dialog"
+          aria-controls={dialogId}
+          className="ui-date-picker__input"
+          onClick={() => (open ? close() : openCalendar())}
+          onKeyDown={handleInputKeyDown}
+        />
+        <IconButton
+          ref={triggerRef}
+          className="ui-date-picker__trigger"
+          variant="ghost"
+          size="sm"
+          type="button"
+          aria-label={triggerLabel}
+          aria-expanded={open}
+          aria-controls={dialogId}
+          onClick={() => (open ? close() : openCalendar())}
+          disabled={disabled}
+        >
+          <CalendarBlank weight="bold" />
+        </IconButton>
+      </div>
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              ref={dialogRef}
+              id={dialogId}
+              className={clsx("ui-date-picker__popover", `ui-date-picker__popover--${placement}`)}
+              role="dialog"
+              aria-label="Pilih tanggal"
+              style={{
+                visibility: positioned ? "visible" : "hidden",
+                top: anchor ? `${anchor.top}px` : undefined,
+                left: anchor ? `${anchor.left}px` : undefined,
+                width: anchor ? `${anchor.width}px` : undefined,
+              }}
+            >
+              <header className="ui-date-picker__header">
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  aria-label="Bulan sebelumnya"
+                  onClick={() => changeMonth(-1)}
+                >
+                  <CaretLeft weight="bold" />
+                </IconButton>
+                <h2 aria-live="polite">
+                  {viewDate.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}
+                </h2>
+                <IconButton
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  aria-label="Bulan berikutnya"
+                  onClick={() => changeMonth(1)}
+                >
+                  <CaretRight weight="bold" />
+                </IconButton>
+              </header>
+              <table className="ui-date-picker__grid" aria-label="Kalender">
+                <thead>
+                  <tr>
+                    {["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((day, index) => (
+                      <th
+                        key={day}
+                        scope="col"
+                        abbr={
+                          ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"][index]
+                        }
+                      >
+                        {day}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeks.map((week) => (
+                    <tr key={week.key}>
+                      {week.days.map((day) => {
+                        const inMonth = day.getMonth() === viewDate.getMonth();
+                        const active = isSameDay(day, activeDate);
+                        const selected = selectedDate ? isSameDay(day, selectedDate) : false;
+                        const isToday = isSameDay(day, today);
+                        return (
+                          <td key={toDateValue(day)}>
+                            <button
+                              type="button"
+                              className="ui-date-picker__day"
+                              data-active={active}
+                              data-date={toDateValue(day)}
+                              data-outside={!inMonth}
+                              data-selected={selected}
+                              aria-current={isToday ? "date" : undefined}
+                              aria-label={`${day.toLocaleDateString("id-ID", {
+                                weekday: "long",
+                                day: "numeric",
+                                month: "long",
+                                year: "numeric",
+                              })}${selected ? ", dipilih" : ""}`}
+                              tabIndex={active ? 0 : -1}
+                              onClick={() => commit(toDateValue(day))}
+                              onFocus={() => setActiveDate(day)}
+                              onKeyDown={handleDayKeyDown}
+                            >
+                              {day.getDate()}
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <footer className="ui-date-picker__footer">
+                <Button
+                  className="ui-date-picker__today"
+                  variant="secondary"
+                  type="button"
+                  onClick={() => commit(toDateValue(today))}
+                >
+                  Hari ini
+                </Button>
+                {clearable && currentValue ? (
+                  <button
+                    className="ui-date-picker__clear"
+                    type="button"
+                    onClick={() => commit("")}
+                  >
+                    Hapus tanggal
+                  </button>
+                ) : null}
+              </footer>
             </div>,
             document.body,
           )

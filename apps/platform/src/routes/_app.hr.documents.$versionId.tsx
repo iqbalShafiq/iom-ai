@@ -1,6 +1,7 @@
 import {
   Button,
   ConfirmDialog,
+  DatePicker,
   Field,
   FullscreenDialog,
   HoverPopover,
@@ -540,18 +541,17 @@ function DocumentDetail() {
                 <Input name="title" defaultValue={version.title} required />
               </Field>
               <Field label="Berlaku sejak">
-                <Input
+                <DatePicker
                   name="effectiveFrom"
-                  type="date"
                   defaultValue={version.effectiveFrom.slice(0, 10)}
                   required
                 />
               </Field>
               <Field label="Berlaku sampai" hint="Kosongkan jika belum ada tanggal akhir.">
-                <Input
+                <DatePicker
                   name="effectiveUntil"
-                  type="date"
                   defaultValue={version.effectiveUntil?.slice(0, 10) ?? ""}
+                  clearable
                 />
               </Field>
               <div className="metadata-editor__field--full">
