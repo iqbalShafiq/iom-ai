@@ -289,7 +289,7 @@ export function ChatView(props: {
       <div className="chat-layout" data-closing={isClosing ? "true" : undefined}>
         <IconButton
           className="chat-close"
-          variant="neutral"
+          variant="primary"
           size="lg"
           type="button"
           aria-label="Tutup percakapan"

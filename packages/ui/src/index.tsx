@@ -263,7 +263,12 @@ export function FullscreenDialog({
     >
       <header className="ui-fullscreen-dialog__header">
         <h2 id={titleId}>{title}</h2>
-        <IconButton variant="accent" type="button" aria-label="Tutup layar penuh" onClick={onClose}>
+        <IconButton
+          variant="primary"
+          type="button"
+          aria-label="Tutup layar penuh"
+          onClick={onClose}
+        >
           <X weight="bold" />
         </IconButton>
       </header>

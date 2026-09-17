@@ -404,7 +404,7 @@ function DocumentDetail() {
         trailingAction={
           <IconButton
             className="detail-tabs__fullscreen"
-            variant="accent"
+            variant="primary"
             size="lg"
             type="button"
             aria-label="Buka preview dan review layar penuh"
