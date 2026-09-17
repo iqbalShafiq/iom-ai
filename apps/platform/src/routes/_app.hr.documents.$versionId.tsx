@@ -125,8 +125,6 @@ type ReviewWorkspaceProps = {
   choices: Record<string, ReviewChoice>;
   notes: Record<string, string>;
   busy: boolean;
-  fullscreen?: boolean;
-  onOpenFullscreen(): void;
   onConfirmAiDecisions(): void;
   onSelectChoice(chunkId: string, choice: ReviewChoice): void;
   onChangeNote(chunkId: string, note: string): void;
@@ -139,8 +137,6 @@ function ReviewWorkspace({
   choices,
   notes,
   busy,
-  fullscreen = false,
-  onOpenFullscreen,
   onConfirmAiDecisions,
   onSelectChoice,
   onChangeNote,
@@ -148,17 +144,6 @@ function ReviewWorkspace({
   return (
     <div className="review-split">
       <section className="document-preview" aria-label="Preview dokumen">
-        {!fullscreen ? (
-          <IconButton
-            className="document-preview__fullscreen"
-            type="button"
-            aria-label="Buka preview layar penuh"
-            title="Buka preview layar penuh"
-            onClick={onOpenFullscreen}
-          >
-            <ArrowsOut weight="bold" />
-          </IconButton>
-        ) : null}
         {version.uploadedFile?.mimeType === "application/pdf" ? (
           <iframe title={`Preview ${version.title}`} src={apiUrl(`/iom/${version.id}/file`)} />
         ) : (
@@ -174,17 +159,6 @@ function ReviewWorkspace({
           <span>AI + HR REVIEW</span>
           <div className="review-panel__head-actions">
             <strong>{version.chunks?.length ?? 0} chunks</strong>
-            {!fullscreen ? (
-              <IconButton
-                className="review-panel__fullscreen"
-                type="button"
-                aria-label="Buka review layar penuh"
-                title="Buka review layar penuh"
-                onClick={onOpenFullscreen}
-              >
-                <ArrowsOut weight="bold" />
-              </IconButton>
-            ) : null}
           </div>
         </header>
         <div className="review-panel__body">
@@ -425,14 +399,22 @@ function DocumentDetail() {
         value={activeTab}
         onChange={(value) => setActiveTab(value as DetailTab)}
         aria-label="Bagian dokumen"
+        trailingAction={
+          <IconButton
+            className="detail-tabs__fullscreen"
+            type="button"
+            aria-label="Buka preview dan review layar penuh"
+            title="Buka preview dan review layar penuh"
+            onClick={() => setFullscreenOpen(true)}
+          >
+            <ArrowsOut weight="bold" />
+          </IconButton>
+        }
         items={[
           {
             value: "review",
-            label: (
-              <>
-                Review <strong>{version.chunks?.length ?? 0}</strong>
-              </>
-            ),
+            label: "Review",
+            count: version.chunks?.length ?? 0,
           },
           ...(!isPublished ? [{ value: "metadata", label: "Metadata" }] : []),
           { value: "relations", label: "Jejak aturan" },
@@ -452,7 +434,6 @@ function DocumentDetail() {
             choices={choices}
             notes={notes}
             busy={busy}
-            onOpenFullscreen={() => setFullscreenOpen(true)}
             onConfirmAiDecisions={confirmAiDecisions}
             onSelectChoice={(chunkId, choice) =>
               setChoices((current) => ({ ...current, [chunkId]: choice }))
@@ -573,8 +554,6 @@ function DocumentDetail() {
           choices={choices}
           notes={notes}
           busy={busy}
-          fullscreen
-          onOpenFullscreen={() => setFullscreenOpen(true)}
           onConfirmAiDecisions={confirmAiDecisions}
           onSelectChoice={(chunkId, choice) =>
             setChoices((current) => ({ ...current, [chunkId]: choice }))

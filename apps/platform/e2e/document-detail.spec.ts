@@ -89,8 +89,10 @@ test("document detail uses compact metadata header and fullscreen review workspa
     "true",
   );
   await expect(page.locator(".document-preview iframe")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Buka preview layar penuh" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Buka review layar penuh" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Buka preview layar penuh" }).click();
+  await page.getByRole("button", { name: "Buka preview dan review layar penuh" }).click();
   const dialog = page.getByRole("dialog", { name: "Preview dan review dokumen" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("AI + HR REVIEW")).toBeVisible();

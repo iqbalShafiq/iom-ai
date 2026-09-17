@@ -1,4 +1,4 @@
-import { IconButton } from "@iom/ui";
+import { CountIndicator, IconButton } from "@iom/ui";
 import {
   Archive,
   ChatCircleDots,
@@ -103,9 +103,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
                         <item.icon weight="bold" />
                         <span className="sidebar-link-label">{item.label}</span>
                         {showReviewCount ? (
-                          <span className="sidebar-review-counter" aria-hidden="true">
-                            {reviewCount}
-                          </span>
+                          <CountIndicator value={reviewCount} className="sidebar-review-counter" />
                         ) : null}
                       </Link>
                     );

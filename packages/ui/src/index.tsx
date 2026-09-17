@@ -49,6 +49,7 @@ export function IconButton({ className, ...props }: ButtonHTMLAttributes<HTMLBut
 export interface TabsItem {
   value: string;
   label: ReactNode;
+  count?: number;
   disabled?: boolean;
   id?: string;
   panelId?: string;
@@ -62,6 +63,7 @@ export function Tabs({
   value,
   onChange,
   size = "default",
+  trailingAction,
   "aria-label": ariaLabel = "Tabs",
 }: {
   className?: string;
@@ -69,6 +71,7 @@ export function Tabs({
   value: string;
   onChange(value: string): void;
   size?: TabsSize;
+  trailingAction?: ReactNode;
   "aria-label"?: string;
 }) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -113,9 +116,9 @@ export function Tabs({
     }
   }
 
-  return (
+  const tabList = (
     <div
-      className={clsx("ui-tabs", size === "compact" && "ui-tabs--compact", className)}
+      className={clsx("ui-tabs", size === "compact" && "ui-tabs--compact")}
       role="tablist"
       aria-label={ariaLabel}
     >
@@ -137,10 +140,26 @@ export function Tabs({
           onKeyDown={(event) => handleKeyDown(event, index)}
         >
           {item.label}
+          {item.count !== undefined ? <CountIndicator value={item.count} /> : null}
         </button>
       ))}
     </div>
   );
+
+  if (!trailingAction) {
+    return cloneElement(tabList, { className: clsx(tabList.props.className, className) });
+  }
+
+  return (
+    <div className={clsx("ui-tabs-shell", className)}>
+      {tabList}
+      <div className="ui-tabs__action">{trailingAction}</div>
+    </div>
+  );
+}
+
+export function CountIndicator({ value, className }: { value: number; className?: string }) {
+  return <span className={clsx("ui-count-indicator", className)}>{value}</span>;
 }
 
 export function HoverPopover({
@@ -179,8 +198,8 @@ export function HoverStat({
       <span className="ui-hover-stat__icon" aria-hidden="true">
         {icon}
       </span>
-      <strong>{value}</strong>
       <span className="ui-hover-stat__label">{label}</span>
+      <strong>{value}</strong>
     </span>
   );
 }

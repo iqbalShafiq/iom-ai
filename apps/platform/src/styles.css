@@ -275,6 +275,7 @@ time,
   padding: 0.45rem 0.55rem;
   color: var(--ink);
   cursor: default;
+  line-height: 1;
   white-space: nowrap;
   transition:
     max-width 180ms ease,
@@ -296,6 +297,8 @@ time,
     monospace;
 }
 .ui-hover-stat__label {
+  display: inline-flex;
+  align-items: center;
   max-width: 0;
   overflow: hidden;
   opacity: 0;
@@ -1057,6 +1060,7 @@ time,
 .sidebar-link-label {
   min-width: 0;
 }
+.ui-count-indicator,
 .sidebar-review-counter {
   min-width: 1.35rem;
   height: 1.35rem;
@@ -1165,7 +1169,7 @@ time,
   max-width: 1500px;
   margin: 0 auto;
 }
-/* Full-viewport page layout: header + strip + tabs stay fixed, the main
+/* Full-viewport page layout: header + tabs stay fixed, the main
    region stretches and scrolls internally, and the review bar docks at the
    bottom. The root layout never scrolls on this page. */
 .document-detail {
@@ -1225,7 +1229,8 @@ time,
     transform 140ms ease;
 }
 .document-detail__status-trigger:hover {
-  background: var(--yellow);
+  background: transparent;
+  color: var(--ink);
   transform: translateY(-1px);
 }
 .document-detail__header-actions,
@@ -1239,16 +1244,13 @@ time,
   flex-wrap: wrap;
 }
 .detail-tabs {
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
 }
-.detail-tabs .ui-tabs__tab strong {
-  font-family: "JetBrains Mono Variable", monospace;
-  font-size: 0.75rem;
-  opacity: 0.75;
+.detail-tabs__fullscreen {
+  width: 44px;
+  height: 44px;
+  border-radius: 0;
 }
 .detail-main {
   min-height: 0;
@@ -1717,12 +1719,6 @@ time,
   align-items: center;
   justify-content: center;
 }
-.document-preview__fullscreen {
-  position: absolute;
-  z-index: 1;
-  top: 0.8rem;
-  right: 0.8rem;
-}
 .document-preview iframe {
   width: 100%;
   height: 100%;
@@ -1767,11 +1763,6 @@ time,
   display: flex;
   align-items: center;
   gap: 0.65rem;
-}
-.review-panel__fullscreen {
-  width: 32px;
-  height: 32px;
-  border-radius: 0;
 }
 .review-panel__body {
   min-height: 0;
@@ -1985,6 +1976,22 @@ time,
   gap: 1rem;
   max-width: 1020px;
 }
+.ui-tabs-shell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+.ui-tabs-shell > .ui-tabs {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.ui-tabs__action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
 .ui-tabs {
   display: flex;
   align-items: center;
@@ -2003,6 +2010,11 @@ time,
   min-height: 38px;
   padding: 0.5rem 0.75rem;
   font-size: 0.82rem;
+}
+.ui-tabs--compact .ui-count-indicator {
+  min-width: 1.15rem;
+  height: 1.15rem;
+  font-size: 0.62rem;
 }
 .ui-tabs__tab {
   min-height: 44px;
