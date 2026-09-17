@@ -289,6 +289,8 @@ export function ChatView(props: {
       <div className="chat-layout" data-closing={isClosing ? "true" : undefined}>
         <IconButton
           className="chat-close"
+          variant="neutral"
+          size="lg"
           type="button"
           aria-label="Tutup percakapan"
           title="Tutup percakapan"
@@ -346,8 +348,15 @@ export function ChatView(props: {
                     </MessagePrimitive.Parts>
                   </MessagePrimitive.Content>
                   <MessagePrimitive.Actions className="message__actions">
-                    <MessagePrimitive.Copy aria-label="Salin jawaban">
-                      <Copy />
+                    <MessagePrimitive.Copy asChild>
+                      <IconButton
+                        variant="ghost"
+                        size="sm"
+                        aria-label="Salin jawaban"
+                        title="Salin jawaban"
+                      >
+                        <Copy aria-hidden />
+                      </IconButton>
                     </MessagePrimitive.Copy>
                   </MessagePrimitive.Actions>
                 </MessagePrimitive.Root>

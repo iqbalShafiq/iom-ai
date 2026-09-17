@@ -353,13 +353,15 @@ function DocumentDetail() {
           <HoverPopover
             className="document-detail__status"
             trigger={
-              <button
+              <IconButton
                 className="document-detail__status-trigger"
+                variant="ghost"
+                size="sm"
                 type="button"
                 aria-label={`Status dokumen: ${statusLabel}`}
               >
                 <StatusIcon status={version.status} size={22} />
-              </button>
+              </IconButton>
             }
           >
             <strong>Status dokumen</strong>
@@ -402,6 +404,8 @@ function DocumentDetail() {
         trailingAction={
           <IconButton
             className="detail-tabs__fullscreen"
+            variant="accent"
+            size="lg"
             type="button"
             aria-label="Buka preview dan review layar penuh"
             title="Buka preview dan review layar penuh"

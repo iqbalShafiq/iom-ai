@@ -126,7 +126,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
               <strong>{user.name}</strong>
               <small>{user.role === "HR_ADMIN" ? "HR / GA Admin" : "Karyawan"}</small>
             </span>
-            <IconButton aria-label="Keluar" onClick={logout}>
+            <IconButton variant="ghost" size="sm" aria-label="Keluar" onClick={logout}>
               <SignOut weight="bold" />
             </IconButton>
           </div>

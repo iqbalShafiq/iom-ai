@@ -15,6 +15,7 @@ import type {
 } from "react";
 import {
   cloneElement,
+  forwardRef,
   isValidElement,
   useCallback,
   useEffect,
@@ -26,6 +27,8 @@ import {
 import { createPortal } from "react-dom";
 
 export type ButtonVariant = "primary" | "secondary";
+export type IconButtonVariant = ButtonVariant | "accent" | "danger" | "ghost" | "neutral";
+export type IconButtonSize = "sm" | "md" | "lg";
 
 export function Button({
   className,
@@ -42,9 +45,28 @@ export function Button({
   );
 }
 
-export function IconButton({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button className={clsx("ui-icon-button", className)} {...props} />;
-}
+export type IconButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: IconButtonVariant;
+  size?: IconButtonSize;
+};
+
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  { className, variant = "primary", size = "md", ...props },
+  ref,
+) {
+  return (
+    <button
+      ref={ref}
+      className={clsx(
+        "ui-icon-button",
+        `ui-icon-button--${variant}`,
+        `ui-icon-button--${size}`,
+        className,
+      )}
+      {...props}
+    />
+  );
+});
 
 export interface TabsItem {
   value: string;
@@ -241,7 +263,7 @@ export function FullscreenDialog({
     >
       <header className="ui-fullscreen-dialog__header">
         <h2 id={titleId}>{title}</h2>
-        <IconButton type="button" aria-label="Tutup layar penuh" onClick={onClose}>
+        <IconButton variant="accent" type="button" aria-label="Tutup layar penuh" onClick={onClose}>
           <X weight="bold" />
         </IconButton>
       </header>
