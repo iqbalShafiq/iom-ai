@@ -2774,14 +2774,14 @@ time,
 }
 .overlap-rule-list > article {
   display: grid;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 2fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 1rem;
+  gap: 0.65rem 0.8rem;
   padding: 0.15rem 0 0;
 }
 .overlap-rule-list h4 {
-  display: grid;
-  grid-template-columns: 1.45rem minmax(0, 1fr);
+  grid-column: 1 / -1;
+  display: flex;
   align-items: start;
   gap: 0.45rem;
   margin: 0;
@@ -2797,6 +2797,7 @@ time,
     monospace;
 }
 .overlap-rule-list dl {
+  grid-column: 1 / -1;
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
