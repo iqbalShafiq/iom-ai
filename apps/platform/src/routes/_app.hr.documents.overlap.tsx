@@ -458,7 +458,7 @@ function OverlapComparison({
         </div>
         <ArrowsLeftRight weight="bold" aria-hidden />
         <div>
-          <span className="section-index">DOKUMEN EXISTING</span>
+          <span className="section-index">Dokumen pembanding</span>
           <h3>{match.existingVersion.title}</h3>
           <strong>{match.existingVersion.iomNumber}</strong>
         </div>
@@ -483,28 +483,33 @@ function OverlapComparison({
           {match.sharedTopics.length ? (
             <section className="overlap-topics" aria-labelledby={`topics-${match.id}`}>
               <header>
-                <span className="section-index">KONTEKS BERSAMA</span>
-                <h3 id={`topics-${match.id}`}>Topik yang sama</h3>
+                <h3 className="section-index" id={`topics-${match.id}`}>
+                  KONTEKS BERSAMA
+                </h3>
               </header>
-              <ul>
+              <ol>
                 {match.sharedTopics.map((topic) => (
                   <li key={topic}>{topic}</li>
                 ))}
-              </ul>
+              </ol>
             </section>
           ) : null}
 
           <section className="overlap-evidence" aria-labelledby={`rules-${match.id}`}>
             <header>
-              <span className="section-index">BUKTI PERBANDINGAN</span>
-              <h3 id={`rules-${match.id}`}>Perubahan aturan</h3>
+              <h3 className="section-index" id={`rules-${match.id}`}>
+                BUKTI PERBANDINGAN
+              </h3>
               <p>Bandingkan aturan aktif dengan isi draft sebelum mencatat keputusan HR.</p>
             </header>
             {match.changedRules.length ? (
               <div className="overlap-rule-list">
-                {match.changedRules.map((rule) => (
+                {match.changedRules.map((rule, index) => (
                   <article key={rule.subject}>
-                    <h4>{rule.subject}</h4>
+                    <h4>
+                      <span aria-hidden="true">{index + 1}.</span>
+                      {rule.subject}
+                    </h4>
                     <dl>
                       <div>
                         <dt>Aturan aktif</dt>
@@ -528,13 +533,13 @@ function OverlapComparison({
           {match.conflicts.length ? (
             <section className="overlap-findings" aria-labelledby={`findings-${match.id}`}>
               <header>
-                <span className="section-index">TEMUAN UNTUK HR</span>
-                <h3 id={`findings-${match.id}`}>Hal yang perlu diperhatikan</h3>
+                <h3 className="section-index" id={`findings-${match.id}`}>
+                  TEMUAN UNTUK HR
+                </h3>
               </header>
               <ol>
-                {match.conflicts.map((conflict, index) => (
+                {match.conflicts.map((conflict) => (
                   <li key={conflict}>
-                    <span>{String(index + 1).padStart(2, "0")}</span>
                     <p>{conflict}</p>
                   </li>
                 ))}

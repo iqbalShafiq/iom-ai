@@ -2400,7 +2400,7 @@ time,
 }
 .overlap-run-rail {
   position: sticky;
-  top: 0;
+  top: 1rem;
   min-width: 0;
   border: var(--line);
   background: var(--paper-light);
@@ -2628,7 +2628,7 @@ time,
 }
 .comparison-heading {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 3rem minmax(0, 1fr);
   align-items: center;
   gap: 1rem;
   border-bottom: var(--line);
@@ -2656,6 +2656,7 @@ time,
 .comparison-heading > svg {
   width: 22px;
   height: 22px;
+  justify-self: center;
 }
 .overlap-recommendation {
   display: grid;
@@ -2717,27 +2718,44 @@ time,
   display: grid;
   gap: 0.3rem;
 }
-.overlap-topics h3,
-.overlap-evidence h3,
-.overlap-findings h3,
 .overlap-no-overlap h3 {
   margin: 0;
   font-size: 1rem;
   line-height: 1.25;
 }
-.overlap-topics ul {
+.overlap-topics > header .section-index,
+.overlap-evidence > header .section-index,
+.overlap-findings > header .section-index {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+.overlap-topics ol {
   display: grid;
   gap: 0.4rem;
   margin: 0;
   padding: 0;
   list-style: none;
+  counter-reset: topic;
 }
 .overlap-topics li {
+  display: grid;
+  grid-template-columns: 1.45rem minmax(0, 1fr);
+  gap: 0.45rem;
   max-width: 72ch;
   color: var(--ink);
   font-size: 0.86rem;
   font-weight: 650;
   line-height: 1.45;
+}
+.overlap-topics li::before {
+  counter-increment: topic;
+  content: counter(topic) ".";
+  color: var(--orange);
+  font:
+    750 0.72rem "JetBrains Mono Variable",
+    monospace;
 }
 .overlap-evidence {
   padding: 1.15rem;
@@ -2756,23 +2774,33 @@ time,
 }
 .overlap-rule-list > article {
   display: grid;
-  grid-template-columns: minmax(170px, 0.8fr) minmax(0, 2fr);
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 2fr);
   align-items: start;
   gap: 1rem;
   padding: 0.15rem 0 0;
 }
 .overlap-rule-list h4 {
+  display: grid;
+  grid-template-columns: 1.45rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.45rem;
   margin: 0;
   color: var(--ink);
   font-size: 0.86rem;
   font-weight: 750;
   line-height: 1.4;
 }
+.overlap-rule-list h4 > span {
+  color: var(--orange);
+  font:
+    750 0.72rem "JetBrains Mono Variable",
+    monospace;
+}
 .overlap-rule-list dl {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(100px, 0.55fr);
-  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
   margin: 0;
 }
 .overlap-rule-list dl > div {
@@ -2825,17 +2853,20 @@ time,
   margin: 0;
   padding: 0;
   list-style: none;
+  counter-reset: finding;
 }
 .overlap-findings li {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 0.65rem;
+  grid-template-columns: 1.45rem minmax(0, 1fr);
+  gap: 0.45rem;
   padding: 0.1rem 0;
 }
-.overlap-findings li > span {
+.overlap-findings li::before {
+  counter-increment: finding;
+  content: counter(finding) ".";
   color: var(--orange);
   font:
-    750 0.66rem "JetBrains Mono Variable",
+    750 0.72rem "JetBrains Mono Variable",
     monospace;
 }
 .overlap-findings li p {
@@ -2865,9 +2896,14 @@ time,
   gap: 0.65rem;
 }
 .overlap-no-overlap {
-  margin: 0.35rem 1.15rem 0.85rem;
+  min-height: 106px;
+  align-content: center;
+  margin: 1rem 1.15rem 0.5rem;
   background: #ece5d8;
   padding: 1rem;
+}
+.overlap-no-overlap + .overlap-decision {
+  padding-top: 0.25rem;
 }
 .overlap-no-overlap p {
   max-width: 65ch;
