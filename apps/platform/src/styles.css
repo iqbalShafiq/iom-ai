@@ -2022,6 +2022,7 @@ time,
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.45rem;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2034,6 +2035,9 @@ time,
     background 120ms ease,
     color 120ms ease,
     box-shadow 120ms ease;
+}
+.ui-tabs__tab .ui-count-indicator {
+  margin-left: 0;
 }
 .ui-tabs__tab:hover {
   background: rgba(255, 253, 247, 0.55);
