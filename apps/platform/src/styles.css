@@ -54,7 +54,10 @@ html {
 *::-webkit-scrollbar-thumb {
   min-height: 32px;
   background: var(--scrollbar-thumb);
-  border: 2px solid var(--ink);
+  border-top: 0;
+  border-right: 2px solid var(--ink);
+  border-bottom: 2px solid var(--ink);
+  border-left: 0;
   border-radius: 0;
   background-clip: padding-box;
 }
@@ -1246,10 +1249,13 @@ time,
 .detail-tabs {
   width: 100%;
   max-width: 100%;
+  box-sizing: border-box;
+  padding-right: 0.25rem;
 }
 .detail-tabs__fullscreen {
   width: 44px;
   height: 44px;
+  margin-right: 0.25rem;
   border-radius: 0;
 }
 .detail-main {
