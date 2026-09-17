@@ -1520,13 +1520,38 @@ time,
   align-items: center;
   gap: 0.4rem;
 }
-.ui-date-picker__header h2 {
-  margin: 0;
+.ui-date-picker__header-label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
   text-align: center;
   font:
     800 0.78rem "JetBrains Mono Variable",
     monospace;
   text-transform: capitalize;
+}
+.ui-date-picker__header-label > span {
+  white-space: nowrap;
+}
+.ui-date-picker__header-choice {
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0.35rem 0.4rem;
+  font: inherit;
+  text-transform: capitalize;
+}
+.ui-date-picker__header-choice:hover {
+  border-color: var(--ink);
+  background: var(--yellow);
+}
+.ui-date-picker__header-choice:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 1px;
 }
 .ui-date-picker__grid {
   border-collapse: separate;
@@ -1546,6 +1571,7 @@ time,
   text-align: center;
 }
 .ui-date-picker__day {
+  width: 100%;
   min-height: 34px;
   display: grid;
   place-items: center;
@@ -1553,9 +1579,11 @@ time,
   background: transparent;
   color: var(--ink);
   cursor: pointer;
+  padding: 0.45rem;
   font:
     700 0.72rem "JetBrains Mono Variable",
     monospace;
+  line-height: 1;
 }
 .ui-date-picker__day:hover {
   background: #f6f1e4;
@@ -1568,6 +1596,37 @@ time,
   border-bottom-color: var(--orange);
 }
 .ui-date-picker__day[data-selected="true"] {
+  border-color: var(--ink);
+  background: var(--yellow);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.ui-date-picker__option-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.ui-date-picker__option {
+  min-width: 0;
+  min-height: 42px;
+  border: 1.5px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0.55rem 0.4rem;
+  font:
+    700 0.7rem "JetBrains Mono Variable",
+    monospace;
+  text-transform: capitalize;
+}
+.ui-date-picker__option:hover {
+  background: #f6f1e4;
+}
+.ui-date-picker__option[data-selected="true"] {
   border-color: var(--ink);
   background: var(--yellow);
   box-shadow: 2px 2px 0 var(--ink);

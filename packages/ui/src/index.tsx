@@ -590,6 +590,7 @@ export function Select({
 }
 
 type CalendarDate = Date;
+type DatePickerView = "days" | "months" | "years";
 
 function parseDateValue(value: string | undefined) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -641,6 +642,10 @@ function monthDays(date: CalendarDate) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
 }
 
+function yearPageStart(year: number) {
+  return year - 5;
+}
+
 export type DatePickerProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
   "type" | "value" | "defaultValue" | "onChange" | "name" | "readOnly"
@@ -685,8 +690,12 @@ export function DatePicker({
   const currentValue = normalizeDateValue(isControlled ? value : uncontrolledValue);
   const initialDate = parseDateValue(currentValue) ?? new Date();
   const [open, setOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<DatePickerView>("days");
   const [viewDate, setViewDate] = useState(() => startOfMonth(initialDate));
   const [activeDate, setActiveDate] = useState<CalendarDate>(initialDate);
+  const [yearRangeStart, setYearRangeStart] = useState(() =>
+    yearPageStart(initialDate.getFullYear()),
+  );
   const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
   const [placement, setPlacement] = useState<"below" | "above">("below");
   const [positioned, setPositioned] = useState(false);
@@ -698,6 +707,7 @@ export function DatePicker({
     if (parsed) {
       setActiveDate(parsed);
       setViewDate(startOfMonth(parsed));
+      setYearRangeStart(yearPageStart(parsed.getFullYear()));
     }
   }, [isControlled, value]);
 
@@ -737,6 +747,8 @@ export function DatePicker({
     const selected = parseDateValue(currentValue) ?? new Date();
     setActiveDate(selected);
     setViewDate(startOfMonth(selected));
+    setYearRangeStart(yearPageStart(selected.getFullYear()));
+    setViewMode("days");
     setPositioned(false);
     setOpen(true);
   }
@@ -745,11 +757,20 @@ export function DatePicker({
     if (!open) return;
     placePopup();
     requestAnimationFrame(() => {
-      dialogRef.current
-        ?.querySelector<HTMLButtonElement>(`[data-date="${toDateValue(activeDate)}"]`)
-        ?.focus();
+      const selector =
+        viewMode === "days"
+          ? `[data-date="${toDateValue(activeDate)}"]`
+          : viewMode === "months"
+            ? `[data-month="${viewDate.getMonth()}"]`
+            : `[data-year="${activeDate.getFullYear()}"]`;
+      const focusTarget =
+        dialogRef.current?.querySelector<HTMLButtonElement>(selector) ??
+        (viewMode === "years"
+          ? dialogRef.current?.querySelector<HTMLButtonElement>(`[data-year="${yearRangeStart}"]`)
+          : null);
+      focusTarget?.focus();
     });
-  }, [open, activeDate, placePopup]);
+  }, [open, activeDate, viewDate, viewMode, yearRangeStart, placePopup]);
 
   useEffect(() => {
     if (!open) return;
@@ -819,6 +840,54 @@ export function DatePicker({
     setActiveDate(nextActive);
   }
 
+  function changeYear(amount: number) {
+    const nextView = new Date(viewDate.getFullYear() + amount, viewDate.getMonth(), 1);
+    const nextActive = new Date(
+      nextView.getFullYear(),
+      nextView.getMonth(),
+      Math.min(activeDate.getDate(), monthDays(nextView)),
+    );
+    setViewDate(nextView);
+    setActiveDate(nextActive);
+  }
+
+  function changeHeader(amount: number) {
+    if (viewMode === "years") {
+      setYearRangeStart((current) => current + amount * 12);
+      return;
+    }
+    if (viewMode === "months") {
+      changeYear(amount);
+      return;
+    }
+    changeMonth(amount);
+  }
+
+  function selectMonth(month: number) {
+    const nextView = new Date(viewDate.getFullYear(), month, 1);
+    const nextActive = new Date(
+      nextView.getFullYear(),
+      nextView.getMonth(),
+      Math.min(activeDate.getDate(), monthDays(nextView)),
+    );
+    setViewDate(nextView);
+    setActiveDate(nextActive);
+    setViewMode("days");
+  }
+
+  function selectYear(year: number) {
+    const nextView = new Date(year, viewDate.getMonth(), 1);
+    const nextActive = new Date(
+      nextView.getFullYear(),
+      nextView.getMonth(),
+      Math.min(activeDate.getDate(), monthDays(nextView)),
+    );
+    setViewDate(nextView);
+    setActiveDate(nextActive);
+    setYearRangeStart(yearPageStart(year));
+    setViewMode("months");
+  }
+
   function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter" || event.key === " " || event.key === "ArrowDown") {
       event.preventDefault();
@@ -867,10 +936,31 @@ export function DatePicker({
     const weekDays = days.slice(index * 7, index * 7 + 7);
     return { days: weekDays, key: toDateValue(weekDays[0] ?? firstDay) };
   });
+  const monthOptions = Array.from({ length: 12 }, (_, month) => ({
+    month,
+    label: new Date(2020, month, 1).toLocaleDateString("id-ID", { month: "long" }),
+  }));
+  const yearOptions = Array.from({ length: 12 }, (_, index) => yearRangeStart + index);
   const selectedDate = parseDateValue(currentValue);
   const today = new Date();
   const displayValue = formatDateDisplay(currentValue);
   const triggerLabel = displayValue ? `Ubah tanggal, ${displayValue}` : "Pilih tanggal";
+  const previousLabel =
+    viewMode === "years"
+      ? "12 tahun sebelumnya"
+      : viewMode === "months"
+        ? "Tahun sebelumnya"
+        : "Bulan sebelumnya";
+  const nextLabel =
+    viewMode === "years"
+      ? "12 tahun berikutnya"
+      : viewMode === "months"
+        ? "Tahun berikutnya"
+        : "Bulan berikutnya";
+  const headerLabel =
+    viewMode === "years"
+      ? `${yearRangeStart}–${yearRangeStart + 11}`
+      : viewDate.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
   return (
     <div ref={rootRef} className={clsx("ui-date-picker", className)}>
@@ -939,78 +1029,150 @@ export function DatePicker({
                   variant="ghost"
                   size="sm"
                   type="button"
-                  aria-label="Bulan sebelumnya"
-                  onClick={() => changeMonth(-1)}
+                  aria-label={previousLabel}
+                  onClick={() => changeHeader(-1)}
                 >
                   <CaretLeft weight="bold" />
                 </IconButton>
-                <h2 aria-live="polite">
-                  {viewDate.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}
-                </h2>
+                <div className="ui-date-picker__header-label" aria-live="polite">
+                  {viewMode === "days" ? (
+                    <>
+                      <button
+                        className="ui-date-picker__header-choice"
+                        type="button"
+                        aria-label="Pilih bulan"
+                        onClick={() => setViewMode("months")}
+                      >
+                        {viewDate.toLocaleDateString("id-ID", { month: "long" })}
+                      </button>
+                      <button
+                        className="ui-date-picker__header-choice"
+                        type="button"
+                        aria-label="Pilih tahun"
+                        onClick={() => {
+                          setYearRangeStart(yearPageStart(viewDate.getFullYear()));
+                          setViewMode("years");
+                        }}
+                      >
+                        {viewDate.getFullYear()}
+                      </button>
+                    </>
+                  ) : viewMode === "months" ? (
+                    <button
+                      className="ui-date-picker__header-choice"
+                      type="button"
+                      aria-label="Pilih tahun"
+                      onClick={() => {
+                        setYearRangeStart(yearPageStart(viewDate.getFullYear()));
+                        setViewMode("years");
+                      }}
+                    >
+                      {viewDate.getFullYear()}
+                    </button>
+                  ) : (
+                    <span>{headerLabel}</span>
+                  )}
+                </div>
                 <IconButton
                   variant="ghost"
                   size="sm"
                   type="button"
-                  aria-label="Bulan berikutnya"
-                  onClick={() => changeMonth(1)}
+                  aria-label={nextLabel}
+                  onClick={() => changeHeader(1)}
                 >
                   <CaretRight weight="bold" />
                 </IconButton>
               </header>
-              <table className="ui-date-picker__grid" aria-label="Kalender">
-                <thead>
-                  <tr>
-                    {["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((day, index) => (
-                      <th
-                        key={day}
-                        scope="col"
-                        abbr={
-                          ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"][index]
-                        }
-                      >
-                        {day}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {weeks.map((week) => (
-                    <tr key={week.key}>
-                      {week.days.map((day) => {
-                        const inMonth = day.getMonth() === viewDate.getMonth();
-                        const active = isSameDay(day, activeDate);
-                        const selected = selectedDate ? isSameDay(day, selectedDate) : false;
-                        const isToday = isSameDay(day, today);
-                        return (
-                          <td key={toDateValue(day)}>
-                            <button
-                              type="button"
-                              className="ui-date-picker__day"
-                              data-active={active}
-                              data-date={toDateValue(day)}
-                              data-outside={!inMonth}
-                              data-selected={selected}
-                              aria-current={isToday ? "date" : undefined}
-                              aria-label={`${day.toLocaleDateString("id-ID", {
-                                weekday: "long",
-                                day: "numeric",
-                                month: "long",
-                                year: "numeric",
-                              })}${selected ? ", dipilih" : ""}`}
-                              tabIndex={active ? 0 : -1}
-                              onClick={() => commit(toDateValue(day))}
-                              onFocus={() => setActiveDate(day)}
-                              onKeyDown={handleDayKeyDown}
-                            >
-                              {day.getDate()}
-                            </button>
-                          </td>
-                        );
-                      })}
+              {viewMode === "days" ? (
+                <table className="ui-date-picker__grid" aria-label="Kalender">
+                  <thead>
+                    <tr>
+                      {["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"].map((day, index) => (
+                        <th
+                          key={day}
+                          scope="col"
+                          abbr={
+                            ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"][index]
+                          }
+                        >
+                          {day}
+                        </th>
+                      ))}
                     </tr>
+                  </thead>
+                  <tbody>
+                    {weeks.map((week) => (
+                      <tr key={week.key}>
+                        {week.days.map((day) => {
+                          const inMonth = day.getMonth() === viewDate.getMonth();
+                          const active = isSameDay(day, activeDate);
+                          const selected = selectedDate ? isSameDay(day, selectedDate) : false;
+                          const isToday = isSameDay(day, today);
+                          return (
+                            <td key={toDateValue(day)}>
+                              <button
+                                type="button"
+                                className="ui-date-picker__day"
+                                data-active={active}
+                                data-date={toDateValue(day)}
+                                data-outside={!inMonth}
+                                data-selected={selected}
+                                aria-current={isToday ? "date" : undefined}
+                                aria-label={`${day.toLocaleDateString("id-ID", {
+                                  weekday: "long",
+                                  day: "numeric",
+                                  month: "long",
+                                  year: "numeric",
+                                })}${selected ? ", dipilih" : ""}`}
+                                tabIndex={active ? 0 : -1}
+                                onClick={() => commit(toDateValue(day))}
+                                onFocus={() => setActiveDate(day)}
+                                onKeyDown={handleDayKeyDown}
+                              >
+                                {day.getDate()}
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : viewMode === "months" ? (
+                <fieldset className="ui-date-picker__option-grid" aria-label="Pilih bulan">
+                  {monthOptions.map(({ month, label }) => (
+                    <button
+                      key={label}
+                      className="ui-date-picker__option"
+                      type="button"
+                      data-month={month}
+                      data-selected={month === viewDate.getMonth()}
+                      tabIndex={month === viewDate.getMonth() ? 0 : -1}
+                      aria-label={`Pilih bulan ${label}`}
+                      onClick={() => selectMonth(month)}
+                    >
+                      {label}
+                    </button>
                   ))}
-                </tbody>
-              </table>
+                </fieldset>
+              ) : (
+                <fieldset className="ui-date-picker__option-grid" aria-label="Pilih tahun">
+                  {yearOptions.map((year) => (
+                    <button
+                      key={year}
+                      className="ui-date-picker__option"
+                      type="button"
+                      data-year={year}
+                      data-selected={year === viewDate.getFullYear()}
+                      tabIndex={year === viewDate.getFullYear() ? 0 : -1}
+                      aria-label={`Pilih tahun ${year}`}
+                      onClick={() => selectYear(year)}
+                    >
+                      {year}
+                    </button>
+                  ))}
+                </fieldset>
+              )}
               <footer className="ui-date-picker__footer">
                 <Button
                   className="ui-date-picker__today"
