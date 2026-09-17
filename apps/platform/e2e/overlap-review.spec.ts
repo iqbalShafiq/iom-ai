@@ -96,22 +96,31 @@ test("overlap review focuses one comparison and confirms an explicit HR decision
   await expect(page.getByRole("heading", { name: "Daftar pemeriksaan" })).toBeVisible();
   await expect(page.getByRole("heading", { name: candidate.iomNumber })).toBeVisible();
 
-  const tabs = page.getByRole("tablist", { name: "Pasangan dokumen" });
+  const tabs = page.getByRole("tablist", { name: "Perbandingan dokumen" });
   await expect(tabs).toBeVisible();
-  await expect(tabs.getByRole("tab", { name: /Pasangan 1/ })).toHaveAttribute(
+  await expect(tabs.getByRole("tab", { name: /Perbandingan 1/ })).toHaveAttribute(
     "aria-selected",
     "true",
   );
   await expect(page.getByRole("heading", { name: existingVersions[0].title })).toBeVisible();
   await expect(page.getByRole("heading", { name: existingVersions[1].title })).toHaveCount(0);
 
-  await tabs.getByRole("tab", { name: /Pasangan 2/ }).click();
+  await tabs.getByRole("tab", { name: /Perbandingan 2/ }).click();
   await expect(page.getByRole("heading", { name: existingVersions[1].title })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Tandai tidak overlap" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tidak ditemukan tumpang tindih" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Perubahan aturan" })).toHaveCount(0);
+  await expect(page.getByText("Topik yang sama", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Tandai tidak tumpang tindih" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Review manual" })).toBeVisible();
+  await expect(page.getByText("Pilih hasil untuk pasangan ini", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByText("Keputusan disimpan ke audit log dan tidak langsung mempublikasikan dokumen.", {
+      exact: true,
+    }),
+  ).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Tandai tidak overlap" }).click();
-  const dialog = page.getByRole("dialog", { name: "Tidak ada overlap material" });
+  await page.getByRole("button", { name: "Tandai tidak tumpang tindih" }).click();
+  const dialog = page.getByRole("dialog", { name: "Tidak ada tumpang tindih" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText(candidate.title);
   await expect(dialog).toContainText(existingVersions[1].title);

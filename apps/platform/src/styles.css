@@ -2619,20 +2619,6 @@ time,
   flex: 0 0 auto;
   min-width: 132px;
 }
-.overlap-match-tab-label {
-  display: grid;
-  gap: 0.08rem;
-  text-align: left;
-}
-.overlap-match-tab-label small {
-  font-size: 0.58rem;
-  text-transform: uppercase;
-}
-.overlap-match-tab-label strong {
-  font:
-    800 0.7rem "JetBrains Mono Variable",
-    monospace;
-}
 .overlap-comparison {
   min-width: 0;
   overflow: hidden;
@@ -2720,49 +2706,66 @@ time,
   text-transform: uppercase;
 }
 .overlap-topics {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.45rem 0.7rem;
-  border-bottom: 1px solid rgba(32, 32, 30, 0.35);
-  padding: 0.75rem 1.15rem;
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.15rem 1.15rem 0.35rem;
 }
-.overlap-topics > span {
+.overlap-topics > header,
+.overlap-evidence > header,
+.overlap-findings > header,
+.overlap-no-overlap {
+  display: grid;
+  gap: 0.3rem;
+}
+.overlap-topics h3,
+.overlap-evidence h3,
+.overlap-findings h3,
+.overlap-no-overlap h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+.overlap-topics ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.overlap-topics li {
+  max-width: 72ch;
   color: var(--ink);
-  font-size: 0.72rem;
-  font-weight: 700;
-  opacity: 0.68;
-}
-.overlap-topics strong {
-  font-size: 0.74rem;
+  font-size: 0.86rem;
+  font-weight: 650;
+  line-height: 1.45;
 }
 .overlap-evidence {
   padding: 1.15rem;
 }
-.overlap-evidence > header {
-  display: grid;
-  gap: 0.25rem;
-  padding-bottom: 0.85rem;
-}
 .overlap-evidence > header p {
+  max-width: 72ch;
+  margin: 0;
   color: var(--ink);
   font-size: 0.8rem;
   opacity: 0.72;
 }
 .overlap-rule-list {
-  border-top: 1.5px solid var(--ink);
+  display: grid;
+  gap: 1rem;
+  margin-top: 0.95rem;
 }
 .overlap-rule-list > article {
   display: grid;
   grid-template-columns: minmax(170px, 0.8fr) minmax(0, 2fr);
   align-items: start;
   gap: 1rem;
-  border-bottom: 1px solid rgba(32, 32, 30, 0.35);
-  padding: 0.85rem 0;
+  padding: 0.15rem 0 0;
 }
 .overlap-rule-list h4 {
   margin: 0;
+  color: var(--ink);
   font-size: 0.86rem;
+  font-weight: 750;
   line-height: 1.4;
 }
 .overlap-rule-list dl {
@@ -2789,9 +2792,9 @@ time,
 .overlap-rule-list dd {
   min-width: 0;
   margin: 0;
-  padding: 0.55rem 0.6rem;
+  padding: 0.58rem 0.65rem;
   color: var(--ink);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   line-height: 1.4;
 }
 .overlap-rule-list dd[data-kind="previous"] {
@@ -2803,25 +2806,22 @@ time,
   background: #dbe9dc;
 }
 .overlap-inline-note {
-  border-top: 1.5px solid var(--ink);
-  padding: 0.85rem 0 0;
+  margin: 0.85rem 0 0;
   color: var(--ink);
+  font-size: 0.82rem;
   opacity: 0.72;
 }
 .overlap-findings {
-  border-top: 1px solid rgba(32, 32, 30, 0.35);
-  border-bottom: 1px solid rgba(32, 32, 30, 0.35);
   background: #ece5d8;
-  padding: 1rem 1.15rem;
+  margin-top: 0.15rem;
+  padding: 1.15rem;
 }
 .overlap-findings > header {
-  display: grid;
-  gap: 0.25rem;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.8rem;
 }
 .overlap-findings ol {
   display: grid;
-  gap: 0;
+  gap: 0.7rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -2830,15 +2830,17 @@ time,
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 0.65rem;
-  border-top: 1px solid rgba(32, 32, 30, 0.28);
-  padding: 0.65rem 0;
+  padding: 0.1rem 0;
 }
 .overlap-findings li > span {
+  color: var(--orange);
   font:
     750 0.66rem "JetBrains Mono Variable",
     monospace;
 }
 .overlap-findings li p {
+  max-width: 72ch;
+  margin: 0;
   color: var(--ink);
   font-size: 0.82rem;
   line-height: 1.45;
@@ -2846,27 +2848,34 @@ time,
 }
 .overlap-decision {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 1rem;
+  gap: 0.7rem;
   padding: 1rem 1.15rem 1.15rem;
 }
-.overlap-decision > div:first-child {
-  display: grid;
-  gap: 0.35rem;
-}
-.overlap-decision p {
-  max-width: 60ch;
-  color: var(--ink);
-  font-size: 0.8rem;
-  opacity: 0.72;
+.overlap-decision__label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
 }
 .overlap-decision__actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 0.65rem;
+}
+.overlap-no-overlap {
+  margin: 0.35rem 1.15rem 0.85rem;
+  background: #ece5d8;
+  padding: 1rem;
+}
+.overlap-no-overlap p {
+  max-width: 65ch;
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  opacity: 0.76;
 }
 .overlap-empty-layout {
   display: grid;

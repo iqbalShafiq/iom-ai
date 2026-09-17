@@ -62,14 +62,14 @@ const DECISION_PRESENTATIONS: Record<string, DecisionPresentation> = {
     description: "Draft akan dicatat sebagai pelengkap dokumen existing.",
   },
   NO_MATERIAL_OVERLAP: {
-    label: "Tidak ada overlap material",
-    confirmLabel: "Tandai tidak overlap",
-    description: "Pasangan dokumen akan dicatat tidak memiliki overlap yang material.",
+    label: "Tidak ada tumpang tindih",
+    confirmLabel: "Tandai tidak tumpang tindih",
+    description: "Dokumen tidak memiliki aturan yang saling tumpang tindih.",
   },
   MANUAL_REVIEW: {
     label: "Perlu review manual",
     confirmLabel: "Catat review manual",
-    description: "Pasangan dokumen akan tetap diblokir untuk pemeriksaan HR lebih lanjut.",
+    description: "Dokumen akan tetap diblokir untuk pemeriksaan HR lebih lanjut.",
   },
 };
 
@@ -92,7 +92,7 @@ function decisionPresentation(decision: string) {
     DECISION_PRESENTATIONS[decision] ?? {
       label: humanize(decision),
       confirmLabel: "Catat keputusan",
-      description: "Keputusan ini akan dicatat untuk pasangan dokumen yang dipilih.",
+      description: "Keputusan ini akan dicatat untuk dokumen yang dipilih.",
     }
   );
 }
@@ -284,7 +284,7 @@ function OverlapPage() {
                       {runItem.candidateVersion.title}
                     </span>
                     <span className="overlap-run-item__meta">
-                      {pendingCount} perlu keputusan · {runItem.matches.length} pasangan
+                      {pendingCount} perlu keputusan · {runItem.matches.length} perbandingan
                     </span>
                   </button>
                 );
@@ -326,7 +326,7 @@ function OverlapPage() {
                 <div className="overlap-run-summary__facts">
                   <span>
                     <strong>{selectedRun.matches.length}</strong>
-                    <small>pasangan</small>
+                    <small>perbandingan</small>
                   </span>
                   <span>
                     <strong>{selectedRun.matches.filter((match) => !match.decision).length}</strong>
@@ -370,7 +370,7 @@ function OverlapPage() {
                 </div>
               ) : selectedRun.matches.length === 0 ? (
                 <EmptyState
-                  title="Tidak ada overlap material"
+                  title="Tidak ditemukan tumpang tindih"
                   description="Sistem tidak menemukan dokumen existing yang perlu dibandingkan."
                 />
               ) : (
@@ -378,18 +378,13 @@ function OverlapPage() {
                   {selectedRun.matches.length > 1 && selectedMatch ? (
                     <Tabs
                       className="overlap-match-tabs"
-                      size="compact"
-                      aria-label="Pasangan dokumen"
+                      aria-label="Perbandingan dokumen"
+                      size="default"
                       value={selectedMatch.id}
                       onChange={setSelectedMatchId}
                       items={selectedRun.matches.map((match, index) => ({
                         value: match.id,
-                        label: (
-                          <span className="overlap-match-tab-label">
-                            <small>Pasangan {index + 1}</small>
-                            <strong>{match.existingVersion.iomNumber}</strong>
-                          </span>
-                        ),
+                        label: `Perbandingan ${index + 1}`,
                         ...(!match.decision ? { count: 1 } : {}),
                       }))}
                     />
@@ -451,6 +446,7 @@ function OverlapComparison({
   const recommendation = decisionPresentation(match.recommendation);
   const confidence = Math.round(match.confidence * 100);
   const decided = match.decision ? decisionPresentation(match.decision.decision) : null;
+  const hasOverlapEvidence = match.recommendation !== "NO_MATERIAL_OVERLAP";
 
   return (
     <article className="overlap-comparison">
@@ -482,81 +478,84 @@ function OverlapComparison({
         </div>
       </section>
 
-      {match.sharedTopics.length ? (
-        <div className="overlap-topics">
-          <span>Topik yang sama</span>
-          {match.sharedTopics.map((topic) => (
-            <strong key={topic}>{topic}</strong>
-          ))}
-        </div>
-      ) : null}
+      {hasOverlapEvidence ? (
+        <>
+          {match.sharedTopics.length ? (
+            <section className="overlap-topics" aria-labelledby={`topics-${match.id}`}>
+              <header>
+                <span className="section-index">KONTEKS BERSAMA</span>
+                <h3 id={`topics-${match.id}`}>Topik yang sama</h3>
+              </header>
+              <ul>
+                {match.sharedTopics.map((topic) => (
+                  <li key={topic}>{topic}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
-      <section className="overlap-evidence" aria-labelledby={`rules-${match.id}`}>
-        <header>
-          <span className="section-index">BUKTI PERBANDINGAN</span>
-          <h3 id={`rules-${match.id}`}>Perubahan aturan</h3>
-          <p>Bandingkan aturan aktif dengan isi draft sebelum mencatat keputusan HR.</p>
-        </header>
-        {match.changedRules.length ? (
-          <div className="overlap-rule-list">
-            {match.changedRules.map((rule) => (
-              <article key={rule.subject}>
-                <h4>{rule.subject}</h4>
-                <dl>
-                  <div>
-                    <dt>Aturan aktif</dt>
-                    <dd data-kind="previous">{rule.previousValue ?? "Tidak disebutkan"}</dd>
-                  </div>
-                  <div>
-                    <dt>Isi draft</dt>
-                    <dd data-kind="proposed">{rule.proposedValue ?? "Tidak disebutkan"}</dd>
-                  </div>
-                  <div>
-                    <dt>Efektif</dt>
-                    <dd>{rule.effectiveFrom ?? "Perlu ditentukan"}</dd>
-                  </div>
-                </dl>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="overlap-inline-note">
-            Tidak ada perubahan aturan terstruktur pada pasangan ini.
-          </p>
-        )}
-      </section>
+          <section className="overlap-evidence" aria-labelledby={`rules-${match.id}`}>
+            <header>
+              <span className="section-index">BUKTI PERBANDINGAN</span>
+              <h3 id={`rules-${match.id}`}>Perubahan aturan</h3>
+              <p>Bandingkan aturan aktif dengan isi draft sebelum mencatat keputusan HR.</p>
+            </header>
+            {match.changedRules.length ? (
+              <div className="overlap-rule-list">
+                {match.changedRules.map((rule) => (
+                  <article key={rule.subject}>
+                    <h4>{rule.subject}</h4>
+                    <dl>
+                      <div>
+                        <dt>Aturan aktif</dt>
+                        <dd data-kind="previous">{rule.previousValue ?? "Tidak disebutkan"}</dd>
+                      </div>
+                      <div>
+                        <dt>Isi draft</dt>
+                        <dd data-kind="proposed">{rule.proposedValue ?? "Tidak disebutkan"}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="overlap-inline-note">
+                Tidak ada perubahan aturan terstruktur pada dokumen ini.
+              </p>
+            )}
+          </section>
 
-      {match.conflicts.length ? (
-        <section className="overlap-findings" aria-labelledby={`findings-${match.id}`}>
-          <header>
-            <span className="section-index">TEMUAN UNTUK HR</span>
-            <h3 id={`findings-${match.id}`}>Hal yang perlu diperhatikan</h3>
-          </header>
-          <ol>
-            {match.conflicts.map((conflict, index) => (
-              <li key={conflict}>
-                <span>{String(index + 1).padStart(2, "0")}</span>
-                <p>{conflict}</p>
-              </li>
-            ))}
-          </ol>
+          {match.conflicts.length ? (
+            <section className="overlap-findings" aria-labelledby={`findings-${match.id}`}>
+              <header>
+                <span className="section-index">TEMUAN UNTUK HR</span>
+                <h3 id={`findings-${match.id}`}>Hal yang perlu diperhatikan</h3>
+              </header>
+              <ol>
+                {match.conflicts.map((conflict, index) => (
+                  <li key={conflict}>
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <p>{conflict}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
+        </>
+      ) : (
+        <section className="overlap-no-overlap" aria-labelledby={`no-overlap-${match.id}`}>
+          <span className="section-index">HASIL PERBANDINGAN</span>
+          <h3 id={`no-overlap-${match.id}`}>Tidak ditemukan tumpang tindih</h3>
+          <p>Tidak ada aturan yang perlu disandingkan dari kedua dokumen ini.</p>
         </section>
-      ) : null}
+      )}
 
       <footer className="overlap-decision">
-        <div>
+        <div className="overlap-decision__label">
           <span className="section-index">KEPUTUSAN HR</span>
           {decided ? (
-            <>
-              <h3>Keputusan sudah dicatat</h3>
-              <StatusStamp status={match.decision?.decision ?? ""} label={decided.label} />
-            </>
-          ) : (
-            <>
-              <h3>Pilih hasil untuk pasangan ini</h3>
-              <p>Keputusan disimpan ke audit log dan tidak langsung mempublikasikan dokumen.</p>
-            </>
-          )}
+            <StatusStamp status={match.decision?.decision ?? ""} label={decided.label} />
+          ) : null}
         </div>
         {!decided ? (
           <div className="overlap-decision__actions">
@@ -580,7 +579,7 @@ function OverlapComparison({
                 type="button"
                 onClick={() => onDecision("NO_MATERIAL_OVERLAP")}
               >
-                Tidak overlap
+                Tidak tumpang tindih
               </Button>
             ) : null}
           </div>
