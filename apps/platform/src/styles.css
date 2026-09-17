@@ -1765,19 +1765,18 @@ time,
 }
 .ui-tabs {
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 0.35rem;
   overflow-x: auto;
   overflow-y: hidden;
   max-height: 46px;
   white-space: nowrap;
-  border-bottom: var(--line);
 }
 .ui-tabs__tab {
   min-height: 44px;
   flex: 0 0 auto;
-  border: 1.5px solid transparent;
-  border-bottom: 0;
+  border: 0;
+  border-top: 1.5px solid rgba(32, 32, 30, 0.28);
   background: transparent;
   color: var(--muted);
   padding: 0.7rem 1rem;
@@ -1792,13 +1791,12 @@ time,
 .ui-tabs__tab:hover {
   background: rgba(255, 253, 247, 0.55);
   color: var(--ink);
+  border-top-color: var(--ink);
 }
 .ui-tabs__tab[aria-selected="true"] {
-  border-color: var(--ink);
+  border-top: 2px solid var(--orange);
   background: var(--yellow);
   color: var(--ink);
-  box-shadow: 3px 0 0 var(--ink);
-  margin-bottom: -2px;
 }
 .ui-tabs__tab:active {
   transform: translateY(1px);
