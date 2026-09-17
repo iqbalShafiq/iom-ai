@@ -46,6 +46,95 @@ export function IconButton({ className, ...props }: ButtonHTMLAttributes<HTMLBut
   return <button className={clsx("ui-icon-button", className)} {...props} />;
 }
 
+export interface TabsItem {
+  value: string;
+  label: ReactNode;
+  disabled?: boolean;
+  id?: string;
+  panelId?: string;
+}
+
+export function Tabs({
+  className,
+  items,
+  value,
+  onChange,
+  "aria-label": ariaLabel = "Tabs",
+}: {
+  className?: string;
+  items: readonly TabsItem[];
+  value: string;
+  onChange(value: string): void;
+  "aria-label"?: string;
+}) {
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const enabledIndexes = items.flatMap((item, itemIndex) => (item.disabled ? [] : [itemIndex]));
+
+  function focusTab(index: number) {
+    const currentPosition = enabledIndexes.indexOf(index);
+    if (currentPosition < 0 || enabledIndexes.length === 0) return;
+    const nextIndex = enabledIndexes[(currentPosition + 1) % enabledIndexes.length];
+    const nextItem = nextIndex === undefined ? undefined : items[nextIndex];
+    if (!nextItem || nextIndex === undefined) return;
+    onChange(nextItem.value);
+    requestAnimationFrame(() => tabRefs.current[nextIndex]?.focus());
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      focusTab(index);
+      return;
+    }
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const currentPosition = enabledIndexes.indexOf(index);
+      if (currentPosition < 0 || enabledIndexes.length === 0) return;
+      const previousIndex =
+        enabledIndexes[(currentPosition - 1 + enabledIndexes.length) % enabledIndexes.length];
+      const previousItem = previousIndex === undefined ? undefined : items[previousIndex];
+      if (!previousItem || previousIndex === undefined) return;
+      onChange(previousItem.value);
+      requestAnimationFrame(() => tabRefs.current[previousIndex]?.focus());
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      const targetIndex = event.key === "Home" ? enabledIndexes[0] : enabledIndexes.at(-1);
+      if (targetIndex === undefined) return;
+      const targetItem = items[targetIndex];
+      if (!targetItem) return;
+      onChange(targetItem.value);
+      requestAnimationFrame(() => tabRefs.current[targetIndex]?.focus());
+    }
+  }
+
+  return (
+    <div className={clsx("ui-tabs", className)} role="tablist" aria-label={ariaLabel}>
+      {items.map((item, index) => (
+        <button
+          key={item.value}
+          ref={(element) => {
+            tabRefs.current[index] = element;
+          }}
+          type="button"
+          role="tab"
+          id={item.id}
+          aria-selected={item.value === value}
+          aria-controls={item.panelId}
+          tabIndex={item.value === value ? 0 : -1}
+          disabled={item.disabled}
+          className="ui-tabs__tab"
+          onClick={() => onChange(item.value)}
+          onKeyDown={(event) => handleKeyDown(event, index)}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={clsx("ui-input", className)} {...props} />;
 }

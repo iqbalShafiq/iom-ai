@@ -1758,10 +1758,51 @@ time,
   font-size: 0.7rem;
 }
 
-.settings-grid {
+.settings-workspace {
   display: grid;
-  grid-template-columns: minmax(320px, 0.8fr) minmax(420px, 1.2fr);
-  gap: 2rem;
+  gap: 1rem;
+  max-width: 1020px;
+}
+.ui-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  overflow-x: auto;
+  border-bottom: var(--line);
+}
+.ui-tabs__tab {
+  min-height: 44px;
+  flex: 0 0 auto;
+  border: 1.5px solid transparent;
+  border-bottom: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.7rem 1rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition:
+    transform 120ms ease,
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.ui-tabs__tab:hover {
+  background: rgba(255, 253, 247, 0.55);
+  color: var(--ink);
+}
+.ui-tabs__tab[aria-selected="true"] {
+  border-color: var(--ink);
+  background: var(--paper-light);
+  color: var(--ink);
+  box-shadow: 3px 0 0 var(--ink);
+  margin-bottom: -2px;
+}
+.ui-tabs__tab:active {
+  transform: translateY(1px);
+}
+.ui-tabs__tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 .policy-editor {
   display: grid;
@@ -1771,6 +1812,34 @@ time,
   background: var(--paper-light);
   padding: 1.2rem;
   box-shadow: var(--shadow);
+}
+.policy-editor .section-heading,
+.policy-history .section-heading {
+  margin-bottom: 0;
+}
+.policy-editor__source {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem 0.8rem;
+  border: 1.5px solid var(--ink);
+  background: var(--yellow);
+}
+.policy-editor__source svg {
+  width: 21px;
+  height: 21px;
+}
+.policy-editor__source span {
+  display: grid;
+  gap: 0.15rem;
+}
+.policy-editor__source small {
+  color: var(--muted);
+}
+.policy-editor__source code {
+  font-size: 0.76rem;
+  font-weight: 750;
 }
 .policy-history {
   display: grid;
@@ -2308,7 +2377,7 @@ time,
     display: none;
   }
   .operations-board,
-  .settings-grid {
+  .settings-workspace {
     grid-template-columns: 1fr;
   }
   .review-split {
