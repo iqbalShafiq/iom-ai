@@ -65,6 +65,88 @@ function FileNameTitle({ fileName }: { fileName: string }) {
   );
 }
 
+function formatDocumentDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Tanggal tidak tersedia";
+  return date.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function formatEffectiveRange(version: Pick<IomVersionRow, "effectiveFrom" | "effectiveUntil">) {
+  const start = formatDocumentDate(version.effectiveFrom);
+  return version.effectiveUntil
+    ? `${start} — ${formatDocumentDate(version.effectiveUntil)}`
+    : `${start} — sekarang`;
+}
+
+function DetailSectionHeading({
+  eyebrow,
+  title,
+  description,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <header className="detail-section-heading">
+      <span className="section-index">{eyebrow}</span>
+      <div>
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </div>
+    </header>
+  );
+}
+
+type TimelineDirection = "incoming" | "current" | "outgoing";
+
+function VersionTimelineItem({
+  direction,
+  relationType,
+  version,
+}: {
+  direction: TimelineDirection;
+  relationType: string;
+  version: Pick<IomVersionRow, "iomNumber" | "revision" | "effectiveFrom" | "effectiveUntil">;
+}) {
+  const directionLabel =
+    direction === "incoming"
+      ? "Relasi masuk"
+      : direction === "outgoing"
+        ? "Relasi keluar"
+        : "Versi saat ini";
+  const description =
+    direction === "incoming"
+      ? "Versi terkait mengarah ke dokumen yang sedang dibuka."
+      : direction === "outgoing"
+        ? "Dokumen ini mengarah ke versi terkait yang terdampak."
+        : "Versi dokumen yang sedang dibuka.";
+
+  return (
+    <li className="version-timeline__item" data-direction={direction}>
+      <span className="version-timeline__marker" aria-hidden="true">
+        <StatusIcon status={relationType} size={18} />
+      </span>
+      <div className="version-timeline__entry">
+        <header>
+          <StatusStamp status={relationType} />
+          <span className="version-timeline__direction">{directionLabel}</span>
+        </header>
+        <div className="version-timeline__identity">
+          <strong>{version.iomNumber}</strong>
+          <span>Revision {version.revision}</span>
+        </div>
+        <span className="version-timeline__date">Efektif {formatEffectiveRange(version)}</span>
+        <p>{description}</p>
+      </div>
+    </li>
+  );
+}
+
 function MarkedText({
   text,
   spans,
@@ -253,11 +335,7 @@ function DocumentDetail() {
   const decisionCount = Object.keys(choices).length;
   const fileName = version.uploadedFile?.originalName || version.title;
   const statusLabel = version.status.replaceAll("_", " ");
-  const effectiveDate = new Date(version.effectiveFrom).toLocaleDateString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  const effectiveDate = formatDocumentDate(version.effectiveFrom);
 
   async function saveReview() {
     const decisions = Object.entries(choices).map(([chunkId, visibility]) => ({
@@ -449,99 +527,131 @@ function DocumentDetail() {
         ) : null}
         {activeTab === "metadata" && !isPublished ? (
           <form className="metadata-editor" onSubmit={saveMetadata}>
-            <Field label="Nomor IOM">
-              <Input name="iomNumber" defaultValue={version.iomNumber} required />
-            </Field>
-            <Field label="Judul">
-              <Input name="title" defaultValue={version.title} required />
-            </Field>
-            <Field label="Berlaku sejak">
-              <Input
-                name="effectiveFrom"
-                type="date"
-                defaultValue={version.effectiveFrom.slice(0, 10)}
-                required
-              />
-            </Field>
-            <Field label="Berlaku sampai" hint="Kosongkan jika belum ada tanggal akhir.">
-              <Input
-                name="effectiveUntil"
-                type="date"
-                defaultValue={version.effectiveUntil?.slice(0, 10) ?? ""}
-              />
-            </Field>
-            <Field
-              label="Versi sebelumnya"
-              hint="Opsional. Pilih jika file ini adalah revisi dari identitas IOM yang sama."
-            >
-              <Select name="previousVersionId" defaultValue="">
-                <SelectOption value="">IOM independen / belum ditentukan</SelectOption>
-                {versions
-                  .filter((candidate) => candidate.id !== version.id)
-                  .map((candidate) => (
-                    <SelectOption key={candidate.id} value={candidate.id}>
-                      {candidate.iomNumber} · rev {candidate.revision} · {candidate.title}
-                    </SelectOption>
-                  ))}
-              </Select>
-            </Field>
-            <Button disabled={busy} type="submit">
-              Simpan metadata
-            </Button>
+            <DetailSectionHeading
+              eyebrow="DOCUMENT METADATA"
+              title="Metadata dokumen"
+              description="Atur identitas dan periode berlaku sebelum dokumen dipublikasikan."
+            />
+            <div className="metadata-editor__fields">
+              <Field label="Nomor IOM">
+                <Input name="iomNumber" defaultValue={version.iomNumber} required />
+              </Field>
+              <Field label="Judul">
+                <Input name="title" defaultValue={version.title} required />
+              </Field>
+              <Field label="Berlaku sejak">
+                <Input
+                  name="effectiveFrom"
+                  type="date"
+                  defaultValue={version.effectiveFrom.slice(0, 10)}
+                  required
+                />
+              </Field>
+              <Field label="Berlaku sampai" hint="Kosongkan jika belum ada tanggal akhir.">
+                <Input
+                  name="effectiveUntil"
+                  type="date"
+                  defaultValue={version.effectiveUntil?.slice(0, 10) ?? ""}
+                />
+              </Field>
+              <div className="metadata-editor__field--full">
+                <Field
+                  label="Versi sebelumnya"
+                  hint="Opsional. Pilih jika file ini adalah revisi dari identitas IOM yang sama."
+                >
+                  <Select name="previousVersionId" defaultValue="">
+                    <SelectOption value="">IOM independen / belum ditentukan</SelectOption>
+                    {versions
+                      .filter((candidate) => candidate.id !== version.id)
+                      .map((candidate) => (
+                        <SelectOption key={candidate.id} value={candidate.id}>
+                          {candidate.iomNumber} · rev {candidate.revision} · {candidate.title}
+                        </SelectOption>
+                      ))}
+                  </Select>
+                </Field>
+              </div>
+            </div>
+            <div className="metadata-editor__actions">
+              <span>Perubahan metadata hanya berlaku untuk versi ini.</span>
+              <Button disabled={busy} type="submit">
+                Simpan metadata
+              </Button>
+            </div>
           </form>
         ) : null}
         {activeTab === "relations" ? (
           <Panel className="version-timeline">
-            <span className="section-index">VERSION RELATIONSHIPS</span>
-            <h2>Jejak aturan</h2>
-            <div>
+            <DetailSectionHeading
+              eyebrow="VERSION RELATIONSHIPS"
+              title="Jejak aturan"
+              description="Lihat hubungan versi ini dengan dokumen IOM lain yang telah dikonfirmasi HR."
+            />
+            <ol className="version-timeline__list">
               {version.incomingRelations?.map((relation) => (
-                <span key={relation.id}>
-                  <StatusStamp status={relation.type} />
-                  <strong>{relation.sourceVersion.iomNumber}</strong> menuju versi ini
-                </span>
+                <VersionTimelineItem
+                  key={relation.id}
+                  direction="incoming"
+                  relationType={relation.type}
+                  version={relation.sourceVersion}
+                />
               ))}
-              <span className="timeline-current">
-                <StatusStamp status="CURRENT" />
-                <strong>{version.iomNumber}</strong> revision {version.revision}
-              </span>
+              <VersionTimelineItem direction="current" relationType="CURRENT" version={version} />
               {version.outgoingRelations?.map((relation) => (
-                <span key={relation.id}>
-                  <StatusStamp status={relation.type} />
-                  <strong>{relation.targetVersion.iomNumber}</strong> terdampak versi ini
-                </span>
+                <VersionTimelineItem
+                  key={relation.id}
+                  direction="outgoing"
+                  relationType={relation.type}
+                  version={relation.targetVersion}
+                />
               ))}
-            </div>
+            </ol>
             {!version.outgoingRelations?.length ? (
-              <div className="inline-control">
-                <Select
-                  aria-label="IOM terdampak"
-                  value={relationTarget}
-                  onChange={(event) => setRelationTarget(event.target.value)}
-                >
-                  <SelectOption value="">Pilih IOM terdampak</SelectOption>
-                  {versions
-                    .filter((candidate) => candidate.id !== version.id)
-                    .map((candidate) => (
-                      <SelectOption key={candidate.id} value={candidate.id}>
-                        {candidate.iomNumber} — {candidate.title}
-                      </SelectOption>
-                    ))}
-                </Select>
-                <Select
-                  aria-label="Jenis relasi"
-                  value={relationType}
-                  onChange={(event) => setRelationType(event.target.value)}
-                >
-                  <SelectOption value="REPLACES">Menggantikan</SelectOption>
-                  <SelectOption value="COMPLEMENTS">Melengkapi</SelectOption>
-                  <SelectOption value="PARTIALLY_OVERRIDES">Mengubah sebagian</SelectOption>
-                  <SelectOption value="RELATED">Terkait</SelectOption>
-                </Select>
-                <Button disabled={busy || !relationTarget} type="button" onClick={saveRelation}>
-                  Konfirmasi relasi
-                </Button>
-              </div>
+              <section
+                className="version-timeline__composer"
+                aria-labelledby="relation-composer-title"
+              >
+                <div className="version-timeline__composer-heading">
+                  <span className="section-index">ADD RELATION</span>
+                  <h3 id="relation-composer-title">Hubungkan ke IOM lain</h3>
+                  <p>Tambahkan relasi setelah memastikan dokumen tujuan dan jenis perubahannya.</p>
+                </div>
+                <div className="version-timeline__composer-grid">
+                  <Field label="IOM terdampak">
+                    <Select
+                      aria-label="IOM terdampak"
+                      value={relationTarget}
+                      onChange={(event) => setRelationTarget(event.target.value)}
+                    >
+                      <SelectOption value="">Pilih IOM terdampak</SelectOption>
+                      {versions
+                        .filter((candidate) => candidate.id !== version.id)
+                        .map((candidate) => (
+                          <SelectOption key={candidate.id} value={candidate.id}>
+                            {candidate.iomNumber} — {candidate.title}
+                          </SelectOption>
+                        ))}
+                    </Select>
+                  </Field>
+                  <Field label="Jenis relasi">
+                    <Select
+                      aria-label="Jenis relasi"
+                      value={relationType}
+                      onChange={(event) => setRelationType(event.target.value)}
+                    >
+                      <SelectOption value="REPLACES">Menggantikan</SelectOption>
+                      <SelectOption value="COMPLEMENTS">Melengkapi</SelectOption>
+                      <SelectOption value="PARTIALLY_OVERRIDES">Mengubah sebagian</SelectOption>
+                      <SelectOption value="RELATED">Terkait</SelectOption>
+                    </Select>
+                  </Field>
+                  <div className="version-timeline__composer-action">
+                    <Button disabled={busy || !relationTarget} type="button" onClick={saveRelation}>
+                      Konfirmasi relasi
+                    </Button>
+                  </div>
+                </div>
+              </section>
             ) : null}
           </Panel>
         ) : null}
