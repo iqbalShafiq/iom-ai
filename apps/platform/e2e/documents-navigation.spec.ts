@@ -56,5 +56,5 @@ test("document tools use nested navigation and routes", async ({ page }) => {
 
   await navigation.getByRole("link", { name: "Overlap" }).click();
   await expect(page).toHaveURL(/\/hr\/documents\/overlap$/);
-  await expect(page.getByRole("heading", { name: "Analisis overlap" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Analisis overlap", exact: true })).toBeVisible();
 });

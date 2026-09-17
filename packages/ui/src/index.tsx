@@ -37,7 +37,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-export type ButtonVariant = "primary" | "secondary";
+export type ButtonVariant = "primary" | "secondary" | "neutral";
 export type IconButtonVariant = ButtonVariant | "accent" | "danger" | "ghost" | "neutral";
 export type IconButtonSize = "sm" | "md" | "lg";
 
@@ -1251,12 +1251,12 @@ export function StatusIcon({ status, size = 15 }: { status: string; size?: numbe
   return <Icon aria-hidden size={size} weight="bold" />;
 }
 
-export function StatusStamp({ status }: { status: string }) {
+export function StatusStamp({ status, label }: { status: string; label?: ReactNode }) {
   const normalized = status.toLowerCase();
   return (
     <span className={clsx("ui-status", `ui-status--${normalized.replaceAll("_", "-")}`)}>
       <StatusIcon status={status} />
-      {status.replaceAll("_", " ")}
+      {label ?? status.replaceAll("_", " ")}
     </span>
   );
 }
@@ -1286,26 +1286,60 @@ export function Panel({ className, ...props }: HTMLAttributes<HTMLElement>) {
 export function ConfirmDialog(props: {
   open: boolean;
   title: string;
-  description: string;
+  description: ReactNode;
   confirmLabel: string;
+  cancelLabel?: string;
+  confirmVariant?: ButtonVariant;
   busy?: boolean;
   onCancel(): void;
   onConfirm(): void;
 }) {
-  if (!props.open) return null;
-  return (
-    <dialog aria-labelledby="confirm-dialog-title" className="ui-panel" open>
-      <h2 id="confirm-dialog-title">{props.title}</h2>
-      <p>{props.description}</p>
-      <div className="header-action-group">
-        <Button disabled={props.busy} type="button" onClick={props.onCancel}>
-          Batal
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (props.open) {
+      if (!dialog.open) dialog.showModal();
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [props.open]);
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      className="ui-confirm-dialog"
+      aria-labelledby={titleId}
+      aria-describedby={descriptionId}
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!props.busy) props.onCancel();
+      }}
+    >
+      <div className="ui-confirm-dialog__body">
+        <span className="section-index">KONFIRMASI KEPUTUSAN</span>
+        <h2 id={titleId}>{props.title}</h2>
+        <p id={descriptionId}>{props.description}</p>
+      </div>
+      <div className="ui-confirm-dialog__actions">
+        <Button variant="neutral" disabled={props.busy} type="button" onClick={props.onCancel}>
+          {props.cancelLabel ?? "Batal"}
         </Button>
-        <Button disabled={props.busy} type="button" onClick={props.onConfirm}>
+        <Button
+          variant={props.confirmVariant ?? "primary"}
+          disabled={props.busy}
+          type="button"
+          onClick={props.onConfirm}
+        >
           {props.busy ? "Memproses..." : props.confirmLabel}
         </Button>
       </div>
-    </dialog>
+    </dialog>,
+    document.body,
   );
 }
 
