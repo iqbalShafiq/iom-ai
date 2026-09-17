@@ -67,7 +67,6 @@ function SettingsPage() {
   const [draftInstructions, setDraftInstructions] = useState(
     () => latestPolicy?.instructions ?? "",
   );
-  const [generatedName, setGeneratedName] = useState(() => formatPolicyTimestamp(new Date()));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -76,7 +75,6 @@ function SettingsPage() {
     setBusy(true);
     setError("");
     const name = formatPolicyTimestamp(new Date());
-    setGeneratedName(name);
     try {
       await apiFetch("/confidentiality/policies", {
         method: "POST",
@@ -138,8 +136,16 @@ function SettingsPage() {
             <div className="policy-editor__source">
               <Clock weight="bold" aria-hidden />
               <span>
-                <small>Nama policy dibuat otomatis dalam waktu WIB</small>
-                <code>{generatedName}</code>
+                {latestPolicy ? (
+                  <>
+                    <small>Terakhir diupdate pada</small>
+                    <time dateTime={latestPolicy.createdAt}>
+                      {formatPolicyTimestamp(new Date(latestPolicy.createdAt))}
+                    </time>
+                  </>
+                ) : (
+                  <small>Belum ada policy tersimpan</small>
+                )}
               </span>
             </div>
             <Field

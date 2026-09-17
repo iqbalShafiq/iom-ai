@@ -75,9 +75,9 @@ test("settings uses tabs and pre-fills the latest HR preference", async ({ page 
   await expect(draftTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByLabel("Instruksi global")).toHaveValue(latestInstructions);
   await expect(page.getByLabel("Nama policy")).toHaveCount(0);
-  await expect(page.locator(".policy-editor__source code")).toHaveText(
-    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2} WIB$/,
-  );
+  await expect(page.locator(".policy-editor__source small")).toHaveText("Terakhir diupdate pada");
+  await expect(page.locator(".policy-editor__source time")).toHaveText("2026-09-16 08:00 WIB");
+  await expect(page.getByText(/Nama policy dibuat otomatis/)).toHaveCount(0);
 
   const createRequestPromise = page.waitForRequest(
     (request) => request.url().endsWith("/confidentiality/policies") && request.method() === "POST",
