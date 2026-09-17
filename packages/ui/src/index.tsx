@@ -1,4 +1,4 @@
-import { CaretDown, Check, CheckCircle, WarningCircle, XCircle } from "@phosphor-icons/react";
+import { CaretDown, Check, CheckCircle, WarningCircle, X, XCircle } from "@phosphor-icons/react";
 import clsx from "clsx";
 import type {
   ButtonHTMLAttributes,
@@ -54,17 +54,21 @@ export interface TabsItem {
   panelId?: string;
 }
 
+export type TabsSize = "default" | "compact";
+
 export function Tabs({
   className,
   items,
   value,
   onChange,
+  size = "default",
   "aria-label": ariaLabel = "Tabs",
 }: {
   className?: string;
   items: readonly TabsItem[];
   value: string;
   onChange(value: string): void;
+  size?: TabsSize;
   "aria-label"?: string;
 }) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -110,7 +114,11 @@ export function Tabs({
   }
 
   return (
-    <div className={clsx("ui-tabs", className)} role="tablist" aria-label={ariaLabel}>
+    <div
+      className={clsx("ui-tabs", size === "compact" && "ui-tabs--compact", className)}
+      role="tablist"
+      aria-label={ariaLabel}
+    >
       {items.map((item, index) => (
         <button
           key={item.value}
@@ -132,6 +140,95 @@ export function Tabs({
         </button>
       ))}
     </div>
+  );
+}
+
+export function HoverPopover({
+  className,
+  trigger,
+  children,
+}: {
+  className?: string;
+  trigger: ReactNode;
+  children: ReactNode;
+}) {
+  const contentId = useId();
+  return (
+    <span className={clsx("ui-popover", className)}>
+      <span className="ui-popover__trigger" aria-describedby={contentId}>
+        {trigger}
+      </span>
+      <span className="ui-popover__content" id={contentId} role="tooltip">
+        {children}
+      </span>
+    </span>
+  );
+}
+
+export function HoverStat({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <span className="ui-hover-stat" title={label}>
+      <span className="ui-hover-stat__icon" aria-hidden="true">
+        {icon}
+      </span>
+      <strong>{value}</strong>
+      <span className="ui-hover-stat__label">{label}</span>
+    </span>
+  );
+}
+
+export function FullscreenDialog({
+  open,
+  title,
+  children,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  children: ReactNode;
+  onClose(): void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const titleId = useId();
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (open) {
+      if (!dialog.open) dialog.showModal();
+    } else if (dialog.open) {
+      dialog.close();
+    }
+  }, [open]);
+
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <dialog
+      ref={dialogRef}
+      className="ui-fullscreen-dialog"
+      aria-labelledby={titleId}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+    >
+      <header className="ui-fullscreen-dialog__header">
+        <h2 id={titleId}>{title}</h2>
+        <IconButton type="button" aria-label="Tutup layar penuh" onClick={onClose}>
+          <X weight="bold" />
+        </IconButton>
+      </header>
+      <div className="ui-fullscreen-dialog__body">{open ? children : null}</div>
+    </dialog>,
+    document.body,
   );
 }
 
@@ -470,19 +567,27 @@ export function Field(props: {
   );
 }
 
+function statusIconFor(status: string) {
+  const normalized = status.toLowerCase();
+  return normalized.includes("fail") || normalized.includes("error")
+    ? XCircle
+    : normalized.includes("review") ||
+        normalized.includes("queue") ||
+        normalized.includes("process")
+      ? WarningCircle
+      : CheckCircle;
+}
+
+export function StatusIcon({ status, size = 15 }: { status: string; size?: number }) {
+  const Icon = statusIconFor(status);
+  return <Icon aria-hidden size={size} weight="bold" />;
+}
+
 export function StatusStamp({ status }: { status: string }) {
   const normalized = status.toLowerCase();
-  const Icon =
-    normalized.includes("fail") || normalized.includes("error")
-      ? XCircle
-      : normalized.includes("review") ||
-          normalized.includes("queue") ||
-          normalized.includes("process")
-        ? WarningCircle
-        : CheckCircle;
   return (
     <span className={clsx("ui-status", `ui-status--${normalized.replaceAll("_", "-")}`)}>
-      <Icon aria-hidden size={15} weight="bold" />
+      <StatusIcon status={status} />
       {status.replaceAll("_", " ")}
     </span>
   );
@@ -559,7 +664,8 @@ export function Metric(props: { label: string; value: ReactNode; detail?: string
 
 export function PageHeader(props: {
   eyebrow?: string;
-  title: string;
+  title: ReactNode;
+  titleAdornment?: ReactNode;
   description?: string;
   actions?: ReactNode;
 }) {
@@ -567,7 +673,10 @@ export function PageHeader(props: {
     <header className="page-header">
       <div>
         {props.eyebrow ? <span className="page-header__eyebrow">{props.eyebrow}</span> : null}
-        <h1>{props.title}</h1>
+        <div className="page-header__title-row">
+          <h1>{props.title}</h1>
+          {props.titleAdornment}
+        </div>
         {props.description ? <p>{props.description}</p> : null}
       </div>
       {props.actions ? <div className="page-header__actions">{props.actions}</div> : null}

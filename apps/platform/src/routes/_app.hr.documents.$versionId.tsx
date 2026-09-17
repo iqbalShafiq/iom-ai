@@ -2,14 +2,28 @@ import {
   Button,
   ConfirmDialog,
   Field,
+  FullscreenDialog,
+  HoverPopover,
+  HoverStat,
+  IconButton,
   Input,
   PageHeader,
   Panel,
   Select,
   SelectOption,
+  StatusIcon,
   StatusStamp,
+  Tabs,
 } from "@iom/ui";
-import { Calendar, Check, EyeSlash, FilePdf, GitBranch, Warning } from "@phosphor-icons/react";
+import {
+  ArrowsOut,
+  Calendar,
+  Check,
+  EyeSlash,
+  FilePdf,
+  GitBranch,
+  Warning,
+} from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { type FormEvent, useMemo, useState } from "react";
 import { apiFetch, apiUrl } from "@/lib/api";
@@ -28,6 +42,28 @@ export const Route = createFileRoute("/_app/hr/documents/$versionId")({
 
 type ReviewChoice = "EMPLOYEE_SAFE" | "HR_ONLY";
 type DetailTab = "review" | "metadata" | "relations";
+type IomChunk = NonNullable<IomVersionRow["chunks"]>[number];
+
+function splitFileName(fileName: string) {
+  const extensionStart = fileName.lastIndexOf(".");
+  if (extensionStart <= 0 || extensionStart === fileName.length - 1) {
+    return { stem: fileName, extension: "" };
+  }
+  return {
+    stem: fileName.slice(0, extensionStart),
+    extension: fileName.slice(extensionStart),
+  };
+}
+
+function FileNameTitle({ fileName }: { fileName: string }) {
+  const { stem, extension } = splitFileName(fileName);
+  return (
+    <span className="document-detail__file-name" title={fileName}>
+      <span>{stem}</span>
+      {extension ? <small>{extension}</small> : null}
+    </span>
+  );
+}
 
 function MarkedText({
   text,
@@ -82,6 +118,149 @@ function MarkedText({
   );
 }
 
+type ReviewWorkspaceProps = {
+  version: IomVersionRow;
+  unresolved: IomChunk[];
+  hasUnreviewedDecisions: boolean;
+  choices: Record<string, ReviewChoice>;
+  notes: Record<string, string>;
+  busy: boolean;
+  fullscreen?: boolean;
+  onOpenFullscreen(): void;
+  onConfirmAiDecisions(): void;
+  onSelectChoice(chunkId: string, choice: ReviewChoice): void;
+  onChangeNote(chunkId: string, note: string): void;
+};
+
+function ReviewWorkspace({
+  version,
+  unresolved,
+  hasUnreviewedDecisions,
+  choices,
+  notes,
+  busy,
+  fullscreen = false,
+  onOpenFullscreen,
+  onConfirmAiDecisions,
+  onSelectChoice,
+  onChangeNote,
+}: ReviewWorkspaceProps) {
+  return (
+    <div className="review-split">
+      <section className="document-preview" aria-label="Preview dokumen">
+        {!fullscreen ? (
+          <IconButton
+            className="document-preview__fullscreen"
+            type="button"
+            aria-label="Buka preview layar penuh"
+            title="Buka preview layar penuh"
+            onClick={onOpenFullscreen}
+          >
+            <ArrowsOut weight="bold" />
+          </IconButton>
+        ) : null}
+        {version.uploadedFile?.mimeType === "application/pdf" ? (
+          <iframe title={`Preview ${version.title}`} src={apiUrl(`/iom/${version.id}/file`)} />
+        ) : (
+          <div className="preview-placeholder">
+            <FilePdf size={44} />
+            <strong>Preview teks tersedia di panel review</strong>
+            <span>Format asli bukan PDF atau preview browser tidak tersedia.</span>
+          </div>
+        )}
+      </section>
+      <section className="review-panel" aria-label="AI dan HR review">
+        <header className="review-panel__head">
+          <span>AI + HR REVIEW</span>
+          <div className="review-panel__head-actions">
+            <strong>{version.chunks?.length ?? 0} chunks</strong>
+            {!fullscreen ? (
+              <IconButton
+                className="review-panel__fullscreen"
+                type="button"
+                aria-label="Buka review layar penuh"
+                title="Buka review layar penuh"
+                onClick={onOpenFullscreen}
+              >
+                <ArrowsOut weight="bold" />
+              </IconButton>
+            ) : null}
+          </div>
+        </header>
+        <div className="review-panel__body">
+          {version.status === "IN_REVIEW" && unresolved.length === 0 && hasUnreviewedDecisions ? (
+            <div className="ai-rationale">
+              <strong>Persetujuan HR diperlukan</strong>
+              <p>
+                AI telah memberi klasifikasi pada semua chunk. Konfirmasikan hasilnya sebelum IOM
+                dapat dipublish.
+              </p>
+              <Button disabled={busy} onClick={onConfirmAiDecisions}>
+                Konfirmasi semua keputusan AI
+              </Button>
+            </div>
+          ) : null}
+          {version.chunks?.map((chunk) => {
+            const decision = chunk.decisions[0];
+            const selected =
+              choices[chunk.id] ??
+              (chunk.visibility === "NEEDS_REVIEW"
+                ? undefined
+                : (chunk.visibility as ReviewChoice));
+            return (
+              <article
+                key={chunk.id}
+                className="chunk-review"
+                data-state={chunk.visibility.toLowerCase()}
+              >
+                <header>
+                  <span>
+                    CHUNK {String(chunk.ordinal + 1).padStart(2, "0")} / PAGE{" "}
+                    {chunk.pageStart ?? "—"}
+                  </span>
+                  <StatusStamp status={chunk.visibility} />
+                </header>
+                <MarkedText text={chunk.text} spans={decision?.sensitiveSpans ?? []} />
+                <div className="ai-rationale">
+                  <strong>Alasan AI</strong>
+                  <p>{decision?.rationale ?? "Klasifikasi belum tersedia."}</p>
+                  <span>Confidence {Math.round((chunk.classificationConfidence ?? 0) * 100)}%</span>
+                </div>
+                {chunk.visibility === "NEEDS_REVIEW" ? (
+                  <div className="decision-controls">
+                    <div>
+                      <button
+                        type="button"
+                        data-selected={selected === "EMPLOYEE_SAFE"}
+                        onClick={() => onSelectChoice(chunk.id, "EMPLOYEE_SAFE")}
+                      >
+                        Employee safe
+                      </button>
+                      <button
+                        type="button"
+                        data-selected={selected === "HR_ONLY"}
+                        onClick={() => onSelectChoice(chunk.id, "HR_ONLY")}
+                      >
+                        HR only
+                      </button>
+                    </div>
+                    <textarea
+                      aria-label={`Alasan chunk ${chunk.ordinal + 1}`}
+                      placeholder="Alasan keputusan HR"
+                      value={notes[chunk.id] ?? ""}
+                      onChange={(event) => onChangeNote(chunk.id, event.target.value)}
+                    />
+                  </div>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function DocumentDetail() {
   const { version, versions } = Route.useLoaderData();
   const router = useRouter();
@@ -90,6 +269,7 @@ function DocumentDetail() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [publishOpen, setPublishOpen] = useState(false);
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const [relationTarget, setRelationTarget] = useState("");
   const [relationType, setRelationType] = useState("REPLACES");
   const [activeTab, setActiveTab] = useState<DetailTab>("review");
@@ -97,6 +277,13 @@ function DocumentDetail() {
   const hasUnreviewedDecisions =
     version.chunks?.some((chunk) => !chunk.decisions[0]?.reviewedAt) ?? false;
   const decisionCount = Object.keys(choices).length;
+  const fileName = version.uploadedFile?.originalName || version.title;
+  const statusLabel = version.status.replaceAll("_", " ");
+  const effectiveDate = new Date(version.effectiveFrom).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 
   async function saveReview() {
     const decisions = Object.entries(choices).map(([chunkId, visibility]) => ({
@@ -187,10 +374,43 @@ function DocumentDetail() {
   return (
     <div className="page-stack document-detail">
       <PageHeader
-        title="Detail dokumen"
+        title={<FileNameTitle fileName={fileName} />}
+        titleAdornment={
+          <HoverPopover
+            className="document-detail__status"
+            trigger={
+              <button
+                className="document-detail__status-trigger"
+                type="button"
+                aria-label={`Status dokumen: ${statusLabel}`}
+              >
+                <StatusIcon status={version.status} size={22} />
+              </button>
+            }
+          >
+            <strong>Status dokumen</strong>
+            <span>{statusLabel}</span>
+          </HoverPopover>
+        }
         actions={
-          <div className="header-action-group">
-            <StatusStamp status={version.status} />
+          <div className="document-detail__header-actions">
+            <div className="document-detail__stats">
+              <HoverStat
+                icon={<Calendar weight="bold" />}
+                label="Tanggal efektif"
+                value={effectiveDate}
+              />
+              <HoverStat
+                icon={<GitBranch weight="bold" />}
+                label="Revision"
+                value={`R${version.revision}`}
+              />
+              <HoverStat
+                icon={<EyeSlash weight="bold" />}
+                label="Belum diputuskan"
+                value={unresolved.length}
+              />
+            </div>
             {version.status === "READY_TO_PUBLISH" ? (
               <Button disabled={busy} onClick={() => setPublishOpen(true)}>
                 <Check /> Publish
@@ -199,158 +419,48 @@ function DocumentDetail() {
           </div>
         }
       />
-      <div className="version-strip">
-        <span title={version.title}>
-          <FilePdf /> {version.title}
-        </span>
-        <span>
-          <Calendar /> Efektif{" "}
-          {new Date(version.effectiveFrom).toLocaleDateString("id-ID", { dateStyle: "long" })}
-        </span>
-        <span>
-          <GitBranch /> Revision {version.revision}
-        </span>
-        <span>
-          <EyeSlash /> {unresolved.length} belum diputuskan
-        </span>
-      </div>
-      <nav className="detail-tabs" aria-label="Bagian dokumen">
-        <button
-          type="button"
-          data-active={activeTab === "review"}
-          onClick={() => setActiveTab("review")}
-        >
-          Review <strong>{version.chunks?.length ?? 0}</strong>
-        </button>
-        {!isPublished ? (
-          <button
-            type="button"
-            data-active={activeTab === "metadata"}
-            onClick={() => setActiveTab("metadata")}
-          >
-            Metadata
-          </button>
-        ) : null}
-        <button
-          type="button"
-          data-active={activeTab === "relations"}
-          onClick={() => setActiveTab("relations")}
-        >
-          Jejak aturan
-        </button>
-      </nav>
-      {error ? (
-        <div className="form-alert" role="alert">
-          <Warning /> {error}
-        </div>
-      ) : null}
+      <Tabs
+        className="detail-tabs"
+        size="compact"
+        value={activeTab}
+        onChange={(value) => setActiveTab(value as DetailTab)}
+        aria-label="Bagian dokumen"
+        items={[
+          {
+            value: "review",
+            label: (
+              <>
+                Review <strong>{version.chunks?.length ?? 0}</strong>
+              </>
+            ),
+          },
+          ...(!isPublished ? [{ value: "metadata", label: "Metadata" }] : []),
+          { value: "relations", label: "Jejak aturan" },
+        ]}
+      />
       <div className="detail-main" role="tabpanel">
-        {activeTab === "review" ? (
-          <div className="review-split">
-            <div className="document-preview">
-              {version.uploadedFile?.mimeType === "application/pdf" ? (
-                <iframe
-                  title={`Preview ${version.title}`}
-                  src={apiUrl(`/iom/${version.id}/file`)}
-                />
-              ) : (
-                <div className="preview-placeholder">
-                  <FilePdf size={44} />
-                  <strong>Preview teks tersedia di panel review</strong>
-                  <span>Format asli bukan PDF atau preview browser tidak tersedia.</span>
-                </div>
-              )}
-            </div>
-            <div className="review-panel">
-              <div className="review-panel__head">
-                <span>AI + HR REVIEW</span>
-                <strong>{version.chunks?.length ?? 0} chunks</strong>
-              </div>
-              {version.status === "IN_REVIEW" &&
-              unresolved.length === 0 &&
-              hasUnreviewedDecisions ? (
-                <div className="ai-rationale">
-                  <strong>Persetujuan HR diperlukan</strong>
-                  <p>
-                    AI telah memberi klasifikasi pada semua chunk. Konfirmasikan hasilnya sebelum
-                    IOM dapat dipublish.
-                  </p>
-                  <Button disabled={busy} onClick={confirmAiDecisions}>
-                    Konfirmasi semua keputusan AI
-                  </Button>
-                </div>
-              ) : null}
-              {version.chunks?.map((chunk) => {
-                const decision = chunk.decisions[0];
-                const selected =
-                  choices[chunk.id] ??
-                  (chunk.visibility === "NEEDS_REVIEW"
-                    ? undefined
-                    : (chunk.visibility as ReviewChoice));
-                return (
-                  <article
-                    key={chunk.id}
-                    className="chunk-review"
-                    data-state={chunk.visibility.toLowerCase()}
-                  >
-                    <header>
-                      <span>
-                        CHUNK {String(chunk.ordinal + 1).padStart(2, "0")} / PAGE{" "}
-                        {chunk.pageStart ?? "—"}
-                      </span>
-                      <StatusStamp status={chunk.visibility} />
-                    </header>
-                    <MarkedText text={chunk.text} spans={decision?.sensitiveSpans ?? []} />
-                    <div className="ai-rationale">
-                      <strong>Alasan AI</strong>
-                      <p>{decision?.rationale ?? "Klasifikasi belum tersedia."}</p>
-                      <span>
-                        Confidence {Math.round((chunk.classificationConfidence ?? 0) * 100)}%
-                      </span>
-                    </div>
-                    {chunk.visibility === "NEEDS_REVIEW" ? (
-                      <div className="decision-controls">
-                        <div>
-                          <button
-                            type="button"
-                            data-selected={selected === "EMPLOYEE_SAFE"}
-                            onClick={() =>
-                              setChoices((current) => ({
-                                ...current,
-                                [chunk.id]: "EMPLOYEE_SAFE",
-                              }))
-                            }
-                          >
-                            Employee safe
-                          </button>
-                          <button
-                            type="button"
-                            data-selected={selected === "HR_ONLY"}
-                            onClick={() =>
-                              setChoices((current) => ({ ...current, [chunk.id]: "HR_ONLY" }))
-                            }
-                          >
-                            HR only
-                          </button>
-                        </div>
-                        <textarea
-                          aria-label={`Alasan chunk ${chunk.ordinal + 1}`}
-                          placeholder="Alasan keputusan HR"
-                          value={notes[chunk.id] ?? ""}
-                          onChange={(event) =>
-                            setNotes((current) => ({
-                              ...current,
-                              [chunk.id]: event.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                    ) : null}
-                  </article>
-                );
-              })}
-            </div>
+        {error ? (
+          <div className="form-alert" role="alert">
+            <Warning /> {error}
           </div>
+        ) : null}
+        {activeTab === "review" ? (
+          <ReviewWorkspace
+            version={version}
+            unresolved={unresolved}
+            hasUnreviewedDecisions={hasUnreviewedDecisions}
+            choices={choices}
+            notes={notes}
+            busy={busy}
+            onOpenFullscreen={() => setFullscreenOpen(true)}
+            onConfirmAiDecisions={confirmAiDecisions}
+            onSelectChoice={(chunkId, choice) =>
+              setChoices((current) => ({ ...current, [chunkId]: choice }))
+            }
+            onChangeNote={(chunkId, note) =>
+              setNotes((current) => ({ ...current, [chunkId]: note }))
+            }
+          />
         ) : null}
         {activeTab === "metadata" && !isPublished ? (
           <form className="metadata-editor" onSubmit={saveMetadata}>
@@ -451,6 +561,27 @@ function DocumentDetail() {
           </Panel>
         ) : null}
       </div>
+      <FullscreenDialog
+        open={fullscreenOpen}
+        title="Preview dan review dokumen"
+        onClose={() => setFullscreenOpen(false)}
+      >
+        <ReviewWorkspace
+          version={version}
+          unresolved={unresolved}
+          hasUnreviewedDecisions={hasUnreviewedDecisions}
+          choices={choices}
+          notes={notes}
+          busy={busy}
+          fullscreen
+          onOpenFullscreen={() => setFullscreenOpen(true)}
+          onConfirmAiDecisions={confirmAiDecisions}
+          onSelectChoice={(chunkId, choice) =>
+            setChoices((current) => ({ ...current, [chunkId]: choice }))
+          }
+          onChangeNote={(chunkId, note) => setNotes((current) => ({ ...current, [chunkId]: note }))}
+        />
+      </FullscreenDialog>
       {decisionCount ? (
         <div className="sticky-review-bar">
           <span>
