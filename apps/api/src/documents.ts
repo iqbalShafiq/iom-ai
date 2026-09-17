@@ -13,6 +13,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { audit } from "./audit.js";
 import { authMiddleware, requireHr } from "./auth.js";
+import { needsConfidentialityReview } from "./confidentiality-review.js";
 import { rateLimit } from "./rate-limit.js";
 import type { AppBindings } from "./types.js";
 
@@ -275,11 +276,39 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     return context.json({ versions });
   });
 
+  async function confidentialityReviewQueue(database: AppBindings["Variables"]["database"]) {
+    const candidates = await database.iomVersion.findMany({
+      where: { status: "IN_REVIEW" },
+      orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
+      take: 100,
+      include: {
+        document: true,
+        _count: { select: { chunks: true } },
+        chunks: {
+          select: {
+            visibility: true,
+            decisions: {
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: { reviewedAt: true },
+            },
+          },
+        },
+      },
+    });
+    return candidates
+      .filter((version) => needsConfidentialityReview(version.chunks))
+      .map(({ chunks: _chunks, ...version }) => version);
+  }
+
+  app.get("/iom/reviews", requireHr(), async (context) => {
+    const versions = await confidentialityReviewQueue(context.get("database"));
+    return context.json({ versions });
+  });
+
   app.get("/iom/review-count", requireHr(), async (context) => {
-    const count = await context
-      .get("database")
-      .iomVersion.count({ where: { status: "IN_REVIEW" } });
-    return context.json({ count });
+    const versions = await confidentialityReviewQueue(context.get("database"));
+    return context.json({ count: versions.length });
   });
 
   app.get("/iom/:versionId", async (context) => {

@@ -5,14 +5,12 @@ import { apiFetch } from "@/lib/api";
 import type { IomVersionRow } from "@/lib/types";
 
 export const Route = createFileRoute("/_app/hr/documents/confidentiality")({
-  loader: () => apiFetch<{ versions: IomVersionRow[] }>("/iom"),
+  loader: () => apiFetch<{ versions: IomVersionRow[] }>("/iom/reviews"),
   component: ReviewsPage,
 });
 
 function ReviewsPage() {
-  const pending = Route.useLoaderData().versions.filter(
-    (version) => version.status === "IN_REVIEW",
-  );
+  const pending = Route.useLoaderData().versions;
   return (
     <div className="page-stack">
       <PageHeader title="Review kerahasiaan" />

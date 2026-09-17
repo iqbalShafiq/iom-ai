@@ -2,26 +2,26 @@ import { Button, PageHeader, Panel, ProgressBar } from "@iom/ui";
 import { ArrowRight, UploadSimple } from "@phosphor-icons/react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { apiFetch } from "@/lib/api";
-import type { IomVersionRow, UploadBatchRow } from "@/lib/types";
+import type { UploadBatchRow } from "@/lib/types";
 
 export const Route = createFileRoute("/_app/hr/")({
   beforeLoad: ({ context }) => {
     if (context.user.role !== "HR_ADMIN") throw new Error("FORBIDDEN");
   },
   loader: async () => {
-    const [uploads, documents] = await Promise.all([
+    const [uploads, reviews] = await Promise.all([
       apiFetch<{ batches: UploadBatchRow[] }>("/uploads/batches"),
-      apiFetch<{ versions: IomVersionRow[] }>("/iom"),
+      apiFetch<{ count: number }>("/iom/review-count"),
     ]);
-    return { uploads, documents };
+    return { uploads, reviews };
   },
   component: HrOverview,
 });
 
 function HrOverview() {
-  const { uploads, documents } = Route.useLoaderData();
+  const { uploads, reviews } = Route.useLoaderData();
   const navigate = useNavigate();
-  const reviewCount = documents.versions.filter((item) => item.status === "IN_REVIEW").length;
+  const reviewCount = reviews.count;
   return (
     <div className="page-stack">
       <PageHeader title="Overview" />

@@ -21,11 +21,15 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: { count: 5 } });
       return;
     }
+    if (pathname === "/iom/reviews") {
+      await route.fulfill({ json: { versions: [] } });
+      return;
+    }
     if (pathname === "/overlap/runs") {
       await route.fulfill({ json: { runs: [] } });
       return;
     }
-    await route.fulfill({ status: 404, json: { error: "Not found" } });
+    await route.fulfill({ status: 404, json: { error: `Not found: ${pathname}` } });
   });
 });
 
