@@ -8,7 +8,8 @@ import {
   searchIomInputSchema,
   searchIomOutputSchema,
 } from "@iom/contracts";
-import { type IomOpenAIModel, openaiReasoning } from "./catalog.js";
+import { type IomOpenAIModel, reasoningPlacement } from "./catalog.js";
+import { agentObservabilityOptions, type IomAgentObservability } from "./observability.js";
 import type { RetrievalScope, RetrievalService } from "./retrieval.js";
 
 export interface IomAgentScope extends RetrievalScope {
@@ -76,17 +77,18 @@ export function createIomAgent(options: {
   retrieval: RetrievalService;
   scope: IomAgentScope;
   reasoningEffort: ReasoningEffort;
+  observability?: IomAgentObservability;
 }) {
-  const reasoning = openaiReasoning(options.reasoningEffort);
+  const reasoning = reasoningPlacement(options.model, options.reasoningEffort);
   return new Agent({
     id: "iom-regulation-assistant",
     name: "Asisten Regulasi IOM",
     description: "Menjawab pertanyaan IOM berdasarkan bukti yang terotorisasi dan bertanggal.",
     model: options.model,
+    ...agentObservabilityOptions(options.observability),
     maxTurns: 4,
     toolChoice: "auto",
-    providerOptions: reasoning.providerOptions,
-    controls: reasoning.controls,
+    ...reasoning,
     tools: [createSearchIomTool(options.retrieval, options.scope)],
     instructions: `
 Anda adalah asisten regulasi IOM perusahaan. IOM adalah memo internal kantor.

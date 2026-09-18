@@ -5,6 +5,7 @@ const config = {
   NODE_ENV: "test",
   DATABASE_URL: "postgresql://iom:iom@localhost:5432/iom_test",
   QDRANT_URL: "http://localhost:6333",
+  QDRANT_API_KEY: undefined,
   OPENAI_API_KEY: "test",
   OPENAI_BASE_URL: "https://api.openai.com/v1",
   COOKIE_SECRET: "test-cookie-secret-at-least-32-characters",
@@ -17,8 +18,18 @@ const config = {
   WORKER_AI_TIMEOUT_MS: 120_000,
   OCR_LANGUAGES: "ind+eng",
   ANVIA_LENS_ENABLED: false,
-  CLASSIFIER_MODEL_ID: "gpt-5.6-luna",
-  OVERLAP_MODEL_ID: "gpt-5.6-luna",
+  ANVIA_LENS_URL: undefined,
+  LANGFUSE_ENABLED: false,
+  LANGFUSE_PUBLIC_KEY: undefined,
+  LANGFUSE_SECRET_KEY: undefined,
+  LANGFUSE_BASE_URL: "https://cloud.langfuse.com",
+  LANGFUSE_ENVIRONMENT: "test",
+  LANGFUSE_RELEASE: "local",
+  LANGFUSE_CAPTURE_MODE: "full",
+  LANGFUSE_CAPTURE_MAX_BYTES: 65_536,
+  OBSERVABILITY_ID_SECRET: undefined,
+  CLASSIFIER_MODEL_ID: "deepseek-v4-flash-0731",
+  OVERLAP_MODEL_ID: "deepseek-v4-flash-0731",
 } as const;
 
 describe("API boundary", () => {

@@ -10,11 +10,12 @@ import {
   type RoleScopedKnowledgeIndex,
   reciprocalRankFusion,
 } from "@iom/agents";
-import type { ConfidentialityPolicy, IomEvidence } from "@iom/contracts";
+import type { ConfidentialityPolicy, IomEvidence, ObservabilityTraceRef } from "@iom/contracts";
 import type { Database } from "@iom/database";
 import type { LeasedJob } from "@iom/database/jobs";
 import { refreshIomPublishReadiness } from "@iom/database/readiness";
 import { relevantAnnotations } from "@iom/documents";
+import { confidentialityTrace, type IomObservability, overlapTrace } from "@iom/observability";
 import { JobProcessingError } from "./runner.js";
 import { runWithAiTimeout } from "./timeouts.js";
 
@@ -279,8 +280,14 @@ export function createPolicyEvaluationHandler(
   openai: OpenAIClient,
   modelId: WorkerModelId,
   aiTimeoutMs: number,
+  observability: IomObservability,
+  environment: string,
+  release: string,
 ) {
-  const classifier = createConfidentialityClassifier(createOpenAIModel(openai, modelId));
+  const classifier = createConfidentialityClassifier(
+    createOpenAIModel(openai, modelId),
+    observability.agentObservability,
+  );
   return async (job: LeasedJob, signal: AbortSignal) => {
     const policyId = payloadId(job, "policyId");
     const record = await database.confidentialityPolicy.findUnique({ where: { id: policyId } });
@@ -311,6 +318,8 @@ export function createPolicyEvaluationHandler(
         continue;
       }
       const annotations = relevantAnnotations(chunk.version.annotations, chunk);
+      let observabilityTraceId: string | undefined;
+      let observabilityObservationId: string | undefined;
       const outcome = await runWithAiTimeout(signal, aiTimeoutMs, (operationSignal) =>
         classifyConfidentiality({
           agent: classifier,
@@ -328,6 +337,22 @@ export function createPolicyEvaluationHandler(
             })),
           },
           signal: operationSignal,
+          trace: confidentialityTrace({
+            sessionId: chunk.versionId,
+            modelId,
+            policyVersion: policy.version,
+            ...(chunk.pageStart ? { page: chunk.pageStart } : {}),
+            service: "worker",
+            environment,
+            release,
+            reevaluate: true,
+          }),
+          onTrace: (trace) => {
+            observabilityTraceId = trace.traceId;
+            if (trace.observationId !== undefined) {
+              observabilityObservationId = trace.observationId;
+            }
+          },
         }),
       );
       await database.$transaction(async (transaction) => {
@@ -345,6 +370,8 @@ export function createPolicyEvaluationHandler(
             sensitiveSpans: outcome.sensitiveSpans,
             conflictsWithMarker: outcome.conflictsWithMarker,
             modelId,
+            ...(observabilityTraceId ? { observabilityTraceId } : {}),
+            ...(observabilityObservationId ? { observabilityObservationId } : {}),
           },
         });
       });
@@ -371,8 +398,14 @@ export function createOverlapHandler(
   openai: OpenAIClient,
   modelId: WorkerModelId,
   aiTimeoutMs: number,
+  observability: IomObservability,
+  environment: string,
+  release: string,
 ) {
-  const analyzer = createOverlapAnalyzer(createOpenAIModel(openai, modelId));
+  const analyzer = createOverlapAnalyzer(
+    createOpenAIModel(openai, modelId),
+    observability.agentObservability,
+  );
   return async (job: LeasedJob, signal: AbortSignal) => {
     const runId = payloadId(job, "runId");
     let candidateVersionId: string | null = null;
@@ -579,6 +612,7 @@ export function createOverlapHandler(
           .map((id) => candidateChunkById.get(id))
           .filter((chunk): chunk is (typeof run.candidateVersion.chunks)[number] => Boolean(chunk));
         const existingChunks = existing.chunks.filter((chunk) => existingIds.has(chunk.id));
+        const traces: ObservabilityTraceRef[] = [];
         const match = await analyzeOverlap({
           agent: analyzer,
           candidateVersionId: run.candidateVersionId,
@@ -592,6 +626,24 @@ export function createOverlapHandler(
           ...(coverageWarning ? { coverageWarning } : {}),
           modelTimeoutMs: aiTimeoutMs,
           signal,
+          trace: overlapTrace({
+            sessionId: runId,
+            modelId,
+            phase: "compare",
+            candidateVersionId: run.candidateVersionId,
+            existingVersionId: existing.id,
+            pairCount: selectedPairs.length,
+            service: "worker",
+            environment,
+            release,
+          }),
+          onTrace: (trace) => {
+            traces.push({
+              name: "iom.overlap.compare",
+              traceId: trace.traceId,
+              ...(trace.observationId ? { observationId: trace.observationId } : {}),
+            });
+          },
         });
         metrics.analyzedCandidateCount += 1;
         metrics.modelCallCount +=
@@ -607,6 +659,7 @@ export function createOverlapHandler(
             changedRules: match.changedRules,
             conflicts: match.conflicts,
             evidence: match.evidence,
+            ...(traces.length > 0 ? { observabilityTraces: traces } : {}),
           },
           update: {
             recommendation: match.recommendation,
@@ -615,6 +668,7 @@ export function createOverlapHandler(
             changedRules: match.changedRules,
             conflicts: match.conflicts,
             evidence: match.evidence,
+            ...(traces.length > 0 ? { observabilityTraces: traces } : {}),
           },
         });
       }

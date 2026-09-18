@@ -30,12 +30,17 @@ export function createIngestionHandler(
   aiTimeoutMs: number,
   classify: (input: {
     policy: ConfidentialityPolicy;
+    versionId: string;
     text: string;
     page?: number;
     batchNote?: string;
     manualConfidential: boolean;
     signal?: AbortSignal;
-  }) => Promise<ConfidentialityDecision>,
+  }) => Promise<{
+    decision: ConfidentialityDecision;
+    observabilityTraceId?: string;
+    observabilityObservationId?: string;
+  }>,
 ) {
   return async (job: LeasedJob, signal: AbortSignal): Promise<void> => {
     const { uploadedFileId } = parsePayload(job);
@@ -163,9 +168,10 @@ export function createIngestionHandler(
     };
     for (const chunk of chunks) {
       if (signal.aborted) throw new JobProcessingError("WORKER_SHUTDOWN", true);
-      const decision = await runWithAiTimeout(signal, aiTimeoutMs, (operationSignal) =>
+      const classified = await runWithAiTimeout(signal, aiTimeoutMs, (operationSignal) =>
         classify({
           policy,
+          versionId: version.id,
           text: chunk.text,
           page: chunk.pageStart,
           ...(uploaded.batch.note ? { batchNote: uploaded.batch.note } : {}),
@@ -173,6 +179,7 @@ export function createIngestionHandler(
           signal: operationSignal,
         }),
       );
+      const decision = classified.decision;
       await database.$transaction([
         database.confidentialityDecision.create({
           data: {
@@ -185,6 +192,12 @@ export function createIngestionHandler(
             sensitiveSpans: decision.sensitiveSpans,
             conflictsWithMarker: decision.conflictsWithMarker,
             modelId: classifierModelId,
+            ...(classified.observabilityTraceId
+              ? { observabilityTraceId: classified.observabilityTraceId }
+              : {}),
+            ...(classified.observabilityObservationId
+              ? { observabilityObservationId: classified.observabilityObservationId }
+              : {}),
           },
         }),
         database.iomChunk.update({

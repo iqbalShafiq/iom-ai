@@ -29,10 +29,10 @@ describe("server configuration", () => {
     expect(parseServerConfig({ ...required, ANVIA_LENS_URL: "" }).ANVIA_LENS_URL).toBeUndefined();
   });
 
-  it("locks document AI workloads to the approved Luna model", () => {
+  it("locks document AI workloads to the approved DeepSeek model", () => {
     const config = parseServerConfig(required);
-    expect(config.CLASSIFIER_MODEL_ID).toBe("gpt-5.6-luna");
-    expect(config.OVERLAP_MODEL_ID).toBe("gpt-5.6-luna");
+    expect(config.CLASSIFIER_MODEL_ID).toBe("deepseek-v4-flash-0731");
+    expect(config.OVERLAP_MODEL_ID).toBe("deepseek-v4-flash-0731");
     expect(
       parseServerConfig({
         ...required,
@@ -40,9 +40,33 @@ describe("server configuration", () => {
         OVERLAP_MODEL_ID: "gpt-6-astra",
       }),
     ).toMatchObject({
-      CLASSIFIER_MODEL_ID: "gpt-5.6-luna",
-      OVERLAP_MODEL_ID: "gpt-5.6-luna",
+      CLASSIFIER_MODEL_ID: "deepseek-v4-flash-0731",
+      OVERLAP_MODEL_ID: "deepseek-v4-flash-0731",
     });
+  });
+
+  it("allows Langfuse to stay disabled without credentials", () => {
+    const config = parseServerConfig(required);
+    expect(config.LANGFUSE_ENABLED).toBe(false);
+    expect(config.LANGFUSE_PUBLIC_KEY).toBeUndefined();
+    expect(config.LANGFUSE_CAPTURE_MODE).toBe("full");
+  });
+
+  it("fails fast on partial Langfuse credentials", () => {
+    expect(() => parseServerConfig({ ...required, LANGFUSE_PUBLIC_KEY: "pk-lf-test" })).toThrow();
+  });
+
+  it("requires a complete Langfuse connection when enabled", () => {
+    expect(() => parseServerConfig({ ...required, LANGFUSE_ENABLED: "true" })).toThrow();
+    const config = parseServerConfig({
+      ...required,
+      LANGFUSE_ENABLED: "true",
+      LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+      LANGFUSE_SECRET_KEY: "sk-lf-test",
+      OBSERVABILITY_ID_SECRET: "a-secure-test-secret-with-32-characters",
+    });
+    expect(config.LANGFUSE_ENABLED).toBe(true);
+    expect(config.LANGFUSE_BASE_URL).toBe("https://cloud.langfuse.com");
   });
 
   it("fails fast when server secrets are missing", () => {

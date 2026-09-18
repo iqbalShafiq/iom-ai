@@ -21,10 +21,21 @@ dan platform sebagai tiga process/service terpisah di production.
 
 `pnpm user:create` memakai kebijakan password yang sama dengan login: panjang 8–256 karakter.
 
-Runtime mengunci classifier dan overlap ke `gpt-5.6-luna` di konfigurasi aplikasi; nilai model lama
-di environment diabaikan agar tidak dapat mengubah model production. Katalog chat juga hanya
-menyediakan model tersebut. Ketiga workload memakai reasoning `high` dan tidak mempunyai fallback
-stub.
+Runtime mengunci classifier, overlap, chat, dan evaluation ke `deepseek-v4-flash-0731` di konfigurasi
+aplikasi; nilai model lama di environment diabaikan agar tidak dapat mengubah model production.
+Katalog chat juga hanya menyediakan model tersebut. Seluruh workload memakai reasoning `high` dan
+tidak mempunyai fallback stub.
+
+Langfuse dinonaktifkan sampai `LANGFUSE_ENABLED=true` beserta public key, secret key, base URL,
+environment, release, dan `OBSERVABILITY_ID_SECRET` valid. Outage Langfuse tidak boleh menggagalkan
+klasifikasi, overlap, atau chat. `flush()` hanya untuk smoke development; shutdown process memakai
+`close()` yang idempotent. Evaluation development dijalankan manual lewat `pnpm eval:smoke`,
+`pnpm eval:observability`, dan `pnpm eval:all`. Belum ada CI release gate.
+
+`pnpm eval:observability` mengirim satu run confidentiality, overlap, dan chat ke Langfuse bila
+enabled. Ingest Cloud bisa tertunda puluhan detik; cek session `obs-probe-confidentiality`,
+`obs-probe-overlap`, dan `obs-probe-chat`. US Cloud memakai
+`LANGFUSE_BASE_URL=https://us.cloud.langfuse.com`.
 
 ## Worker recovery
 

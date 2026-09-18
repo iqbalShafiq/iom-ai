@@ -1,7 +1,7 @@
 import type { OpenAIClient, OpenAICompletionModel, OpenAIReasoningControls } from "@anvia/openai";
-import type { ModelOption, ReasoningEffort } from "@iom/contracts";
+import { DEFAULT_RUNTIME_MODEL_ID, type ModelOption, type ReasoningEffort } from "@iom/contracts";
 
-export const defaultOpenAIModelId = "gpt-5.6-luna";
+export const defaultOpenAIModelId = DEFAULT_RUNTIME_MODEL_ID;
 
 export const agentReasoningEfforts = {
   confidentiality: "high",
@@ -13,8 +13,8 @@ export type IomOpenAIModel = OpenAICompletionModel<OpenAIReasoningControls>;
 export const modelCatalog = [
   {
     id: defaultOpenAIModelId,
-    label: "GPT 5.6 Luna",
-    description: "Cepat dan hemat untuk pertanyaan regulasi sehari-hari.",
+    label: "DeepSeek V4 Flash 0731",
+    description: "Model runtime untuk chat, klasifikasi kerahasiaan, overlap, dan evaluasi.",
     supportedReasoningEfforts: ["high"],
     defaultReasoningEffort: "high",
     supportsStreaming: true,
@@ -38,14 +38,11 @@ export function resolveModelSelection(
   return { modelId: model.id, reasoningEffort: effort as ReasoningEffort };
 }
 
-// Chat Completions does not stream Luna reasoning summaries and can fail the
-// Anvia accumulator. Official Anvia v1 and the working chat-with-document
-// agent both construct OpenAI reasoning models with api: "responses".
 export function resolveModelApi(
-  _modelId: string,
+  modelId: string,
   _catalog: readonly ModelOption[] = modelCatalog,
 ): "chat" | "responses" {
-  return "responses";
+  return modelId.startsWith("deepseek") ? "chat" : "responses";
 }
 
 export function openaiReasoning(reasoningEffort: ReasoningEffort) {
@@ -62,6 +59,21 @@ export function openaiReasoning(reasoningEffort: ReasoningEffort) {
 
 export function reasoningControls(reasoningEffort: ReasoningEffort) {
   return openaiReasoning(reasoningEffort).controls;
+}
+
+export function modelSupportsReasoningEffort(model: IomOpenAIModel | undefined) {
+  return model?.controls?.reasoningEffort !== undefined;
+}
+
+export function reasoningPlacement(
+  model: IomOpenAIModel | undefined,
+  reasoningEffort: ReasoningEffort,
+) {
+  const reasoning = openaiReasoning(reasoningEffort);
+  if (!modelSupportsReasoningEffort(model)) {
+    return { providerOptions: reasoning.providerOptions };
+  }
+  return reasoning;
 }
 
 export function createOpenAIModel(

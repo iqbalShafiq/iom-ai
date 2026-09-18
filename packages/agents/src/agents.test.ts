@@ -1,3 +1,4 @@
+import { AgentStructuredOutputError } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
 import { describe, expect, it } from "vitest";
 import {
@@ -51,6 +52,58 @@ describe("agent policies", () => {
     expect(result.categories).toContain("INVALID_SENSITIVE_SPAN");
   });
 
+  it("routes incomplete confidentiality model output to HR review", async () => {
+    const policy = {
+      id: "00000000-0000-4000-8000-000000000001",
+      version: 1,
+      name: "Policy",
+      instructions: "Pisahkan informasi publik dan informasi terbatas secara konservatif.",
+      examples: [],
+      status: "ACTIVE" as const,
+    };
+    const incomplete = await classifyConfidentiality({
+      agent: {
+        generate: async () => ({ type: "blocked", reason: "schema" }),
+      } as never,
+      policy,
+      input: { text: "Aturan cuti tahunan 12 hari.", manualMarkers: [] },
+    });
+    expect(incomplete.visibility).toBe("NEEDS_REVIEW");
+    expect(incomplete.categories).toContain("CLASSIFICATION_INCOMPLETE");
+
+    const invalidSchema = await classifyConfidentiality({
+      agent: {
+        generate: async () => {
+          throw new AgentStructuredOutputError({
+            phase: "schema",
+            attempt: 2,
+            maxAttempts: 2,
+            outputLength: 12,
+            normalizedLength: 12,
+            outputFormat: "raw",
+            attemptUsage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+            },
+            usage: {
+              inputTokens: 1,
+              outputTokens: 1,
+              totalTokens: 2,
+              cachedInputTokens: 0,
+              cacheCreationInputTokens: 0,
+            },
+          });
+        },
+      } as never,
+      policy,
+      input: { text: "Lampiran biaya insiden.", manualMarkers: [] },
+    });
+    expect(invalidSchema.visibility).toBe("NEEDS_REVIEW");
+  });
+
   it("forces unsafe overlap model output to manual review", async () => {
     const candidateId = "00000000-0000-0000-0000-000000000001";
     const existingId = "00000000-0000-0000-0000-000000000002";
@@ -81,6 +134,48 @@ describe("agent policies", () => {
       existingVersionId: "00000000-0000-0000-0000-000000000020",
       candidateChunks: [{ id: candidateId, text: "aturan baru" }],
       existingChunks: [{ id: existingId, text: "aturan lama" }],
+    });
+    expect(result.recommendation).toBe("MANUAL_REVIEW");
+  });
+
+  it("does not accept REPLACES without an explicit replacement statement", async () => {
+    const candidateId = "00000000-0000-4000-8000-000000000001";
+    const existingId = "00000000-0000-4000-8000-000000000002";
+    const existingVersionId = "00000000-0000-4000-8000-000000000020";
+    const result = await analyzeOverlap({
+      agent: {
+        generate: async () => ({
+          type: "response",
+          output: {
+            existingVersionId,
+            recommendation: "REPLACES",
+            confidence: 0.96,
+            sharedTopics: ["mfa"],
+            changedRules: [
+              {
+                subject: "VPN",
+                previousValue: null,
+                proposedValue: "wajib",
+                effectiveFrom: "2026-04-01",
+              },
+            ],
+            hasConflict: false,
+            conflicts: [],
+            evidence: [
+              {
+                candidateChunkId: candidateId,
+                existingChunkId: existingId,
+                explanation: "keduanya menyebut MFA",
+              },
+            ],
+          },
+        }),
+      } as never,
+      candidateVersionId: "00000000-0000-4000-8000-000000000010",
+      existingVersionId,
+      candidateChunks: [{ id: candidateId, text: "Pedoman kerja hibrida wajib MFA dan VPN." }],
+      existingChunks: [{ id: existingId, text: "Kebijakan keamanan informasi mewajibkan MFA." }],
+      evidencePairs: [{ candidateChunkId: candidateId, existingChunkId: existingId }],
     });
     expect(result.recommendation).toBe("MANUAL_REVIEW");
   });
@@ -157,11 +252,11 @@ describe("agent policies", () => {
     ).rejects.toBeInstanceOf(OverlapModelTimeoutError);
   });
 
-  it("exposes only the approved Luna chat configuration", () => {
+  it("exposes only the approved DeepSeek chat configuration", () => {
     expect(modelCatalog).toEqual([
       expect.objectContaining({
-        id: "gpt-5.6-luna",
-        label: "GPT 5.6 Luna",
+        id: "deepseek-v4-flash-0731",
+        label: "DeepSeek V4 Flash 0731",
         supportedReasoningEfforts: ["high"],
         defaultReasoningEffort: "high",
       }),
@@ -173,33 +268,29 @@ describe("agent policies", () => {
     expect(() => resolveModelSelection("gpt-5.6-terra", "medium")).toThrow("MODEL_NOT_ALLOWED");
   });
 
-  it("locks Luna chat runs to high reasoning", () => {
-    expect(resolveModelSelection("gpt-5.6-luna", "high")).toEqual({
-      modelId: "gpt-5.6-luna",
+  it("locks DeepSeek chat runs to high reasoning", () => {
+    expect(resolveModelSelection("deepseek-v4-flash-0731", "high")).toEqual({
+      modelId: "deepseek-v4-flash-0731",
       reasoningEffort: "high",
     });
-    expect(() => resolveModelSelection("gpt-5.6-luna", "low")).toThrow(
+    expect(() => resolveModelSelection("deepseek-v4-flash-0731", "low")).toThrow(
       "REASONING_EFFORT_NOT_SUPPORTED",
     );
-    expect(() => resolveModelSelection("gpt-5.6-luna", "none")).toThrow(
+    expect(() => resolveModelSelection("deepseek-v4-flash-0731", "none")).toThrow(
       "REASONING_EFFORT_NOT_SUPPORTED",
     );
   });
 
-  it("uses the Responses API and shared reasoning options for every IOM agent model", () => {
-    expect(resolveModelApi("gpt-5.6-luna")).toBe("responses");
+  it("uses Chat Completions for DeepSeek and Responses for OpenAI reasoning models", () => {
+    expect(resolveModelApi("deepseek-v4-flash-0731")).toBe("chat");
     expect(resolveModelApi("gpt-5.6-sol")).toBe("responses");
     expect(resolveModelApi("gpt-5.6-terra")).toBe("responses");
     expect(resolveModelApi("gpt-6-astra")).toBe("responses");
-    const model = createOpenAIModel(new OpenAIClient({ apiKey: "test-key" }), "gpt-5.6-luna");
-    expect(model.controls?.reasoningEffort?.options).toEqual([
-      "none",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max",
-    ]);
+    const model = createOpenAIModel(
+      new OpenAIClient({ apiKey: "test-key" }),
+      "deepseek-v4-flash-0731",
+    );
+    expect(model.controls?.reasoningEffort).toBeUndefined();
     expect(openaiReasoning(agentReasoningEfforts.confidentiality)).toEqual({
       controls: { reasoningEffort: "high" },
       providerOptions: { reasoning: { effort: "high", summary: "auto" } },
@@ -207,7 +298,10 @@ describe("agent policies", () => {
   });
 
   it("configures chat, confidentiality, and overlap with the same reasoning placement", () => {
-    const model = createOpenAIModel(new OpenAIClient({ apiKey: "test-key" }), "gpt-5.6-luna");
+    const model = createOpenAIModel(
+      new OpenAIClient({ apiKey: "test-key" }),
+      "deepseek-v4-flash-0731",
+    );
     const chat = createIomAgent({
       model,
       reasoningEffort: "medium",
@@ -227,15 +321,15 @@ describe("agent policies", () => {
     });
     const classifier = createConfidentialityClassifier(model);
     const overlap = createOverlapAnalyzer(model);
-    expect(chat.controls).toEqual({ reasoningEffort: "medium" });
+    expect(chat.controls).toBeUndefined();
     expect(chat.providerOptions).toEqual({
       reasoning: { effort: "medium", summary: "auto" },
     });
-    expect(classifier.controls).toEqual({ reasoningEffort: "high" });
+    expect(classifier.controls).toBeUndefined();
     expect(classifier.providerOptions).toEqual({
       reasoning: { effort: "high", summary: "auto" },
     });
-    expect(overlap.controls).toEqual({ reasoningEffort: "high" });
+    expect(overlap.controls).toBeUndefined();
     expect(overlap.providerOptions).toEqual({
       reasoning: { effort: "high", summary: "auto" },
     });

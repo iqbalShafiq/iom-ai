@@ -59,6 +59,18 @@ export const modelOptionSchema = z.object({
 });
 export type ModelOption = z.infer<typeof modelOptionSchema>;
 
+export const DEFAULT_RUNTIME_MODEL_ID = "deepseek-v4-flash-0731";
+
+export const observabilityTraceRefSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  traceId: z.string().trim().min(1).max(128),
+  observationId: z.string().trim().min(1).max(128).optional(),
+});
+export type ObservabilityTraceRef = z.infer<typeof observabilityTraceRefSchema>;
+
+export const observabilityTraceRefListSchema = z.array(observabilityTraceRefSchema).max(32);
+export type ObservabilityTraceRefList = z.infer<typeof observabilityTraceRefListSchema>;
+
 export const chatRunMetadataSchema = z.object({
   conversationId: z.string().uuid(),
   accessScope: accessScopeSchema,

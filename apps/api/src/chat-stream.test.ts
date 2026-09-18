@@ -8,7 +8,7 @@ async function* mockAgentEvents(): AsyncIterable<AgentStreamEvent> {
     type: "generation_start",
     turn: 1,
     request: { chatHistory: [], documents: [], tools: [] },
-    modelInfo: { provider: "openai", modelId: "gpt-5.6-luna" },
+    modelInfo: { provider: "openai", modelId: "deepseek-v4-flash-0731" },
   };
   yield {
     type: "reasoning_delta",
@@ -36,7 +36,7 @@ describe("chat stream projection", () => {
       metadata: {
         conversationId: "00000000-0000-4000-8000-000000000001",
         accessScope: "EMPLOYEE",
-        modelId: "gpt-5.6-luna",
+        modelId: "deepseek-v4-flash-0731",
         reasoningEffort: "low",
       },
       mapError: () => ({ code: "CHAT_RUN_FAILED", message: "Aman untuk pengguna." }),

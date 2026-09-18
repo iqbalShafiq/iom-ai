@@ -1,4 +1,4 @@
-import type { ModelOption } from "@iom/contracts";
+import { DEFAULT_RUNTIME_MODEL_ID, type ModelOption } from "@iom/contracts";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { ChatView } from "@/features/chat-view";
@@ -22,7 +22,7 @@ function createDraftConversation(
     id: globalThis.crypto.randomUUID(),
     title: "Percakapan baru",
     accessScope,
-    modelId: model?.id ?? "gpt-5.6-luna",
+    modelId: model?.id ?? DEFAULT_RUNTIME_MODEL_ID,
     reasoningEffort: model?.defaultReasoningEffort ?? "high",
     updatedAt: new Date().toISOString(),
   };

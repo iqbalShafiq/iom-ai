@@ -20,6 +20,7 @@ import { z } from "zod";
 import { audit } from "./audit.js";
 import { authMiddleware, requireHr } from "./auth.js";
 import { needsConfidentialityReview, needsPolicyImpactReview } from "./confidentiality-review.js";
+import { enqueueLangfuseScore } from "./langfuse-jobs.js";
 import { rateLimit } from "./rate-limit.js";
 import type { AppBindings } from "./types.js";
 
@@ -658,6 +659,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         409,
       );
     const reviewedAt = new Date();
+    const createdDecisionIds: string[] = [];
     await database.$transaction(async (transaction) => {
       for (const decision of parsed.data.decisions) {
         const reviewedChunk = chunkById.get(decision.chunkId);
@@ -674,7 +676,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         });
         const previousDecision = decisionByChunk.get(decision.chunkId);
         if (!previousDecision) throw new Error("CONFIDENTIALITY_DECISION_NOT_FOUND");
-        await transaction.confidentialityDecision.create({
+        const created = await transaction.confidentialityDecision.create({
           data: {
             chunkId: decision.chunkId,
             policyId: version.confidentialityPolicyId ?? "",
@@ -692,6 +694,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
             reviewedAt,
           },
         });
+        createdDecisionIds.push(created.id);
         await transaction.iomAnnotation.create({
           data: {
             versionId,
@@ -711,6 +714,13 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     });
     const readiness = await refreshIomPublishReadiness(database, versionId);
     const unresolved = readiness?.reasons.length ?? 1;
+    for (const entityId of createdDecisionIds) {
+      await enqueueLangfuseScore(database, {
+        kind: "confidentiality",
+        entityId,
+        revision: reviewedAt.toISOString(),
+      });
+    }
     await audit(database, {
       actorId: actor.id,
       action: "CONFIDENTIALITY_REVIEW",
@@ -1105,6 +1115,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         409,
       );
     }
+    const reviewedAt = new Date();
     const decision = await database.confidentialityDecision.create({
       data: {
         chunkId,
@@ -1117,8 +1128,13 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         conflictsWithMarker: false,
         modelId: "human-review",
         reviewedById: actor.id,
-        reviewedAt: new Date(),
+        reviewedAt,
       },
+    });
+    await enqueueLangfuseScore(database, {
+      kind: "confidentiality",
+      entityId: decision.id,
+      revision: reviewedAt.toISOString(),
     });
     await audit(database, {
       actorId: actor.id,

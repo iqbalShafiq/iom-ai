@@ -21,7 +21,14 @@
     "db:deploy": "dotenv -e .env -- pnpm --filter @iom/database db:deploy",
     "db:seed": "dotenv -e .env -- pnpm --filter @iom/database db:seed",
     "user:create": "dotenv -e .env -- pnpm --filter @iom/database user:create",
-    "branch:check": "node scripts/validate-branch.mjs"
+    "branch:check": "node scripts/validate-branch.mjs",
+    "eval:confidentiality": "dotenv -e .env -- pnpm --filter @iom/evals eval confidentiality",
+    "eval:overlap": "dotenv -e .env -- pnpm --filter @iom/evals eval overlap",
+    "eval:chat": "dotenv -e .env -- pnpm --filter @iom/evals eval chat",
+    "eval:all": "dotenv -e .env -- pnpm --filter @iom/evals eval all",
+    "eval:smoke": "dotenv -e .env -- pnpm --filter @iom/evals eval smoke",
+    "eval:observability": "dotenv -e .env -- pnpm --filter @iom/evals eval observability",
+    "eval:reset-corpus": "dotenv -e .env -- pnpm --filter @iom/evals eval reset-corpus"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.12",

@@ -10,12 +10,14 @@ import {
 import { parseServerConfig } from "@iom/config";
 import { createDatabase } from "@iom/database";
 import { LocalFileStorage } from "@iom/documents";
+import { confidentialityTrace, observabilityFromServerConfig } from "@iom/observability";
 import {
   createIndexVersionHandler,
   createOverlapHandler,
   createPolicyEvaluationHandler,
 } from "./ai-jobs.js";
 import { createIngestionHandler } from "./ingestion.js";
+import { createLangfuseScoreHandler } from "./langfuse-scores.js";
 import { WorkerRunner } from "./runner.js";
 
 const parsedConfig = parseServerConfig(process.env);
@@ -31,8 +33,10 @@ const openai = createIomOpenAIClient({
   apiKey: config.OPENAI_API_KEY,
   ...(config.OPENAI_BASE_URL === undefined ? {} : { baseUrl: config.OPENAI_BASE_URL }),
 });
+const observability = observabilityFromServerConfig(config, "iom-worker");
 const classifier = createConfidentialityClassifier(
   createOpenAIModel(openai, config.CLASSIFIER_MODEL_ID),
+  observability.agentObservability,
 );
 const knowledge = await createQdrantKnowledgeIndex({
   qdrantUrl: config.QDRANT_URL,
@@ -78,8 +82,9 @@ const handlers = new Map([
       config.OCR_LANGUAGES,
       config.CLASSIFIER_MODEL_ID,
       config.WORKER_AI_TIMEOUT_MS,
-      async (input) =>
-        classifyConfidentiality({
+      async (input) => {
+        let capturedTrace: { traceId: string; observationId?: string } | undefined;
+        const decision = await classifyConfidentiality({
           agent: classifier,
           policy: input.policy,
           input: {
@@ -89,7 +94,29 @@ const handlers = new Map([
             manualMarkers: input.manualConfidential ? [{ kind: "CONFIDENTIAL" }] : [],
           },
           ...(input.signal === undefined ? {} : { signal: input.signal }),
-        }),
+          trace: confidentialityTrace({
+            sessionId: input.versionId,
+            modelId: config.CLASSIFIER_MODEL_ID,
+            policyVersion: input.policy.version,
+            ...(input.page === undefined ? {} : { page: input.page }),
+            service: "worker",
+            environment: config.LANGFUSE_ENVIRONMENT,
+            release: config.LANGFUSE_RELEASE,
+          }),
+          onTrace: (trace) => {
+            capturedTrace = { traceId: trace.traceId };
+            if (trace.observationId !== undefined)
+              capturedTrace.observationId = trace.observationId;
+          },
+        });
+        return {
+          decision,
+          ...(capturedTrace?.traceId ? { observabilityTraceId: capturedTrace.traceId } : {}),
+          ...(capturedTrace?.observationId
+            ? { observabilityObservationId: capturedTrace.observationId }
+            : {}),
+        };
+      },
     ),
   ],
   ["INDEX_VERSION", createIndexVersionHandler(database, knowledge.index)],
@@ -100,6 +127,9 @@ const handlers = new Map([
       openai,
       config.CLASSIFIER_MODEL_ID,
       config.WORKER_AI_TIMEOUT_MS,
+      observability,
+      config.LANGFUSE_ENVIRONMENT,
+      config.LANGFUSE_RELEASE,
     ),
   ],
   [
@@ -110,8 +140,12 @@ const handlers = new Map([
       openai,
       config.OVERLAP_MODEL_ID,
       config.WORKER_AI_TIMEOUT_MS,
+      observability,
+      config.LANGFUSE_ENVIRONMENT,
+      config.LANGFUSE_RELEASE,
     ),
   ],
+  ["PUBLISH_LANGFUSE_SCORE", createLangfuseScoreHandler(database, observability)],
 ]);
 const runner = new WorkerRunner({
   database,
@@ -126,4 +160,5 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 await runner.run();
 await knowledge.close();
+await observability.close();
 await database.$disconnect();

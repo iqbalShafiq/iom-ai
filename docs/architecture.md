@@ -42,8 +42,10 @@ membuat conversation beserta request message secara atomik. Draft yang ditutup t
 meninggalkan session kosong; setelah commit, response memberi session ID agar browser mengganti URL
 secara in-place tanpa remount stream. Migration cleanup juga menghapus row legacy tanpa message.
 
-Allowlist runtime saat ini hanya berisi `gpt-5.6-luna` dengan reasoning `high` untuk chat,
-confidentiality, dan overlap; tidak ada fallback model atau stub pada jalur production. Scoped
+Allowlist runtime saat ini hanya berisi `deepseek-v4-flash-0731` (DeepSeek V4 Flash 0731) dengan
+reasoning `high` untuk chat, confidentiality, overlap, dan evaluation; tidak ada fallback model
+atau stub pada jalur production. Observability memakai `@anvia/langfuse` melalui
+`packages/observability`; Lens tetap nonaktif agar tidak menghasilkan trace ganda. Scoped
 `search_iom` membentuk filter dari actor,
 bukan argumen model. Agent maksimal empat turn dan harus abstain tanpa evidence. Anvia Client
 Protocol v3 memproyeksikan reasoning summary, tool status, source, dan answer ke JSONL. Rolling

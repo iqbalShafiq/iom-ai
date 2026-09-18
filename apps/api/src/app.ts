@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ServerConfig } from "@iom/config";
 import type { Database } from "@iom/database";
+import type { IomObservability } from "@iom/observability";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -11,7 +12,11 @@ import { registerOverlapRoutes } from "./overlap.js";
 import { rateLimit } from "./rate-limit.js";
 import type { AppBindings } from "./types.js";
 
-export function createApp(database: Database, config: ServerConfig) {
+export function createApp(
+  database: Database,
+  config: ServerConfig,
+  observability?: IomObservability,
+) {
   const app = new Hono<AppBindings>();
   app.use("*", secureHeaders());
   app.use(
@@ -42,7 +47,7 @@ export function createApp(database: Database, config: ServerConfig) {
   app.get("/health", (context) => context.json({ status: "ok" }));
 
   registerAuthRoutes(app, config);
-  registerChatRoutes(app, config);
+  registerChatRoutes(app, config, observability);
   registerDocumentRoutes(app, config);
   registerOverlapRoutes(app, config.OVERLAP_MODEL_ID);
 

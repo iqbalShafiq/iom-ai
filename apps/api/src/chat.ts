@@ -7,19 +7,27 @@ import {
 import type { AgentStream, AgentStreamEvent } from "@anvia/core/agent";
 import { createClientStreamResponse } from "@anvia/server";
 import {
+  agentTraceOptions,
   createIomAgent,
   createIomOpenAIClient,
   createOpenAIModel,
   createQdrantKnowledgeIndex,
   modelCatalog,
+  observedTrace,
   type RoleScopedKnowledgeIndex,
   resolveModelSelection,
   StreamReleaseGuard,
   sanitizeIomChatHistory,
 } from "@iom/agents";
 import type { ServerConfig } from "@iom/config";
-import { type AccessScope, type ChatRunMetadata, chatRunMetadataSchema } from "@iom/contracts";
+import {
+  type AccessScope,
+  type ChatRunMetadata,
+  chatRunMetadataSchema,
+  DEFAULT_RUNTIME_MODEL_ID,
+} from "@iom/contracts";
 import type { Database, Prisma } from "@iom/database";
+import { chatTurnTrace, type IomObservability } from "@iom/observability";
 import type { Hono } from "hono";
 import { audit } from "./audit.js";
 import { authMiddleware } from "./auth.js";
@@ -232,7 +240,11 @@ export function projectIomAgentEvents(options: {
   );
 }
 
-export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig) {
+export function registerChatRoutes(
+  app: Hono<AppBindings>,
+  config: ServerConfig,
+  observability?: IomObservability,
+) {
   const openai = createIomOpenAIClient({
     apiKey: config.OPENAI_API_KEY,
     ...(config.OPENAI_BASE_URL === undefined ? {} : { baseUrl: config.OPENAI_BASE_URL }),
@@ -261,7 +273,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
     context.json({
       models: catalog,
       defaults: {
-        modelId: catalog[0]?.id ?? "gpt-5.6-luna",
+        modelId: catalog[0]?.id ?? DEFAULT_RUNTIME_MODEL_ID,
         reasoningEffort: catalog[0]?.defaultReasoningEffort ?? "high",
       },
     }),
@@ -410,7 +422,13 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
           accessScope,
           policyVersion: currentPolicy.version,
         },
+        ...(observability?.agentObservability
+          ? { observability: observability.agentObservability }
+          : {}),
       });
+      const hashedActorId = observability?.hashActorId(actor.id);
+      let chatTraceId: string | undefined;
+      let chatObservationId: string | undefined;
       const stream = runAgentWithRetries({
         maxRetries: 2,
         fingerprints: await deniedFingerprints(database),
@@ -435,11 +453,34 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
             }),
           );
         },
-        start: () =>
-          agent.stream({
+        start: () => {
+          const run = agent.stream({
             messages: sanitizedMessages,
             abortSignal: context.req.raw.signal,
-          }),
+            ...agentTraceOptions(
+              chatTurnTrace({
+                sessionId: conversation.id,
+                ...(hashedActorId ? { userId: hashedActorId } : {}),
+                modelId: selection.modelId,
+                reasoningEffort: selection.reasoningEffort,
+                accessScope,
+                policyVersion: currentPolicy.version,
+                service: "api",
+                environment: config.LANGFUSE_ENVIRONMENT,
+                release: config.LANGFUSE_RELEASE,
+              }),
+            ),
+          });
+          void run.result
+            .then((outcome) => {
+              const captured = observedTrace(outcome);
+              if (!captured) return;
+              chatTraceId = captured.traceId;
+              if (captured.observationId !== undefined) chatObservationId = captured.observationId;
+            })
+            .catch(() => undefined);
+          return run;
+        },
       });
       const runId = randomUUID();
       const logError = (error: unknown) => {
@@ -511,6 +552,8 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
                 content: messages as unknown as Prisma.InputJsonValue,
                 modelId: selection.modelId,
                 reasoningEffort: selection.reasoningEffort,
+                ...(chatTraceId ? { observabilityTraceId: chatTraceId } : {}),
+                ...(chatObservationId ? { observabilityObservationId: chatObservationId } : {}),
               },
             });
           },

@@ -12,6 +12,7 @@
     "test": "vitest run --pool=threads --maxWorkers=1"
   },
   "dependencies": {
-    "zod": "4.4.0"
+    "@iom/contracts": "workspace:*",
+    "zod": "4.6.5"
   }
 }

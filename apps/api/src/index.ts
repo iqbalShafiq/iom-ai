@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { parseServerConfig } from "@iom/config";
 import { createDatabase } from "@iom/database";
+import { observabilityFromServerConfig } from "@iom/observability";
 import { createApp } from "./app.js";
 
 const parsedConfig = parseServerConfig(process.env);
@@ -13,7 +14,8 @@ const config = {
   MODEL_CACHE_ROOT: resolve(workspaceRoot, parsedConfig.MODEL_CACHE_ROOT),
 };
 const database = createDatabase(config.DATABASE_URL);
-const app = createApp(database, config);
+const observability = observabilityFromServerConfig(config, "iom-api");
+const app = createApp(database, config, observability);
 
 const server = serve({ fetch: app.fetch, port: config.API_PORT }, ({ port }) => {
   console.info(JSON.stringify({ level: "info", message: "API started", port }));
@@ -21,6 +23,7 @@ const server = serve({ fetch: app.fetch, port: config.API_PORT }, ({ port }) => 
 
 async function shutdown() {
   server.close();
+  await observability.close();
   await database.$disconnect();
 }
 

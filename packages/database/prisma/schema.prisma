@@ -159,6 +159,8 @@ model ConversationMessage {
   modelId        String?
   reasoningEffort String?
   usage          Json?
+  observabilityTraceId String?
+  observabilityObservationId String?
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -351,6 +353,8 @@ model ConfidentialityDecision {
   modelId             String
   reviewedById        String?     @db.Uuid
   reviewedAt          DateTime?
+  observabilityTraceId String?
+  observabilityObservationId String?
   createdAt           DateTime    @default(now())
   chunk               IomChunk    @relation(fields: [chunkId], references: [id], onDelete: Cascade)
   policy              ConfidentialityPolicy @relation(fields: [policyId], references: [id])
@@ -389,6 +393,7 @@ model OverlapMatch {
   changedRules      Json
   conflicts         Json
   evidence          Json
+  observabilityTraces Json?
   createdAt         DateTime              @default(now())
   run               OverlapRun            @relation(fields: [runId], references: [id], onDelete: Cascade)
   existingVersion   IomVersion            @relation("OverlapExisting", fields: [existingVersionId], references: [id])

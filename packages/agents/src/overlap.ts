@@ -1,11 +1,14 @@
 import { Agent, AgentStructuredOutputError } from "@anvia/core/agent";
 import { type OverlapMatch, overlapMatchSchema } from "@iom/contracts";
+import { agentReasoningEfforts, type IomOpenAIModel, reasoningPlacement } from "./catalog.js";
 import {
-  agentReasoningEfforts,
-  type IomOpenAIModel,
-  openaiReasoning,
-  reasoningControls,
-} from "./catalog.js";
+  agentObservabilityOptions,
+  agentTraceOptions,
+  type IomAgentObservability,
+  type IomAgentTrace,
+  type IomObservedTrace,
+  observedTrace,
+} from "./observability.js";
 
 export interface RankedCandidate {
   id: string;
@@ -31,17 +34,20 @@ export function reciprocalRankFusion(
   );
 }
 
-export function createOverlapAnalyzer(model: IomOpenAIModel) {
-  const reasoning = openaiReasoning(agentReasoningEfforts.overlap);
+export function createOverlapAnalyzer(
+  model: IomOpenAIModel,
+  observability?: IomAgentObservability,
+) {
+  const reasoning = reasoningPlacement(model, agentReasoningEfforts.overlap);
   return new Agent({
     id: "iom-overlap-analyzer",
     name: "IOM Overlap Analyzer",
     model,
+    ...agentObservabilityOptions(observability),
     maxTurns: 1,
     retries: { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 500 },
     outputSchema: overlapMatchSchema,
-    controls: reasoning.controls,
-    providerOptions: reasoning.providerOptions,
+    ...reasoning,
     instructions: `
 Bandingkan draft IOM dengan satu IOM existing berdasarkan makna regulasi, bukan hanya istilah serupa.
 Identifikasi topik bersama, nilai lama dan usulan baru, tanggal efektif, konflik, dan pasangan evidence.
@@ -72,6 +78,8 @@ export async function analyzeOverlap(options: {
   coverageWarning?: string;
   modelTimeoutMs?: number;
   signal?: AbortSignal;
+  trace?: IomAgentTrace;
+  onTrace?: (trace: IomObservedTrace) => void;
 }): Promise<OverlapMatch> {
   const fallback = (reason: string): OverlapMatch => ({
     existingVersionId: options.existingVersionId,
@@ -87,7 +95,10 @@ export async function analyzeOverlap(options: {
     const parsed = overlapMatchSchema.safeParse(output);
     return parsed.success ? parsed.data : null;
   };
-  const generate = async (payload: unknown): Promise<OverlapMatch | null> => {
+  const generate = async (
+    payload: unknown,
+    phase: "compare" | "consolidation",
+  ): Promise<OverlapMatch | null> => {
     const parentSignal = options.signal ?? new AbortController().signal;
     const timeoutSignal = options.modelTimeoutMs
       ? AbortSignal.timeout(options.modelTimeoutMs)
@@ -95,13 +106,24 @@ export async function analyzeOverlap(options: {
     const abortSignal = timeoutSignal
       ? AbortSignal.any([parentSignal, timeoutSignal])
       : options.signal;
+    const trace =
+      options.trace === undefined
+        ? undefined
+        : {
+            ...options.trace,
+            name: phase === "consolidation" ? "iom.overlap.consolidate" : "iom.overlap.compare",
+            metadata: { ...options.trace.metadata, phase },
+          };
     try {
       const outcome = await options.agent.generate({
         prompt: JSON.stringify(payload),
         maxTurns: 1,
-        controls: reasoningControls(agentReasoningEfforts.overlap),
+        ...reasoningPlacement(options.agent.model, agentReasoningEfforts.overlap),
         abortSignal,
+        ...agentTraceOptions(trace),
       });
+      const observed = observedTrace(outcome);
+      if (observed) options.onTrace?.(observed);
       if (timeoutSignal?.aborted && !parentSignal.aborted) throw new OverlapModelTimeoutError();
       if (outcome.type !== "response") return null;
       return parseOutput(outcome.output);
@@ -138,13 +160,16 @@ export async function analyzeOverlap(options: {
       const batch = pairList.slice(offset, offset + 8);
       const candidateIds = new Set(batch.map((pair) => pair.candidateChunkId));
       const existingIds = new Set(batch.map((pair) => pair.existingChunkId));
-      const result = await generate({
-        candidateVersionId: options.candidateVersionId,
-        existingVersionId: options.existingVersionId,
-        candidateChunks: options.candidateChunks.filter((chunk) => candidateIds.has(chunk.id)),
-        existingChunks: options.existingChunks.filter((chunk) => existingIds.has(chunk.id)),
-        evidencePairs: batch,
-      });
+      const result = await generate(
+        {
+          candidateVersionId: options.candidateVersionId,
+          existingVersionId: options.existingVersionId,
+          candidateChunks: options.candidateChunks.filter((chunk) => candidateIds.has(chunk.id)),
+          existingChunks: options.existingChunks.filter((chunk) => existingIds.has(chunk.id)),
+          evidencePairs: batch,
+        },
+        "compare",
+      );
       if (!result) return fallback("Salah satu batch analisis model tidak valid.");
       if (
         result.existingVersionId !== options.existingVersionId ||
@@ -156,21 +181,27 @@ export async function analyzeOverlap(options: {
       }
       batchResults.push(result);
     }
-    parsed = await generate({
-      candidateVersionId: options.candidateVersionId,
-      existingVersionId: options.existingVersionId,
-      batchResults,
-      evidencePairs: pairList,
-    });
+    parsed = await generate(
+      {
+        candidateVersionId: options.candidateVersionId,
+        existingVersionId: options.existingVersionId,
+        batchResults,
+        evidencePairs: pairList,
+      },
+      "consolidation",
+    );
     if (!parsed) return fallback("Konsolidasi analisis model tidak valid.");
   } else {
-    parsed = await generate({
-      candidateVersionId: options.candidateVersionId,
-      existingVersionId: options.existingVersionId,
-      candidateChunks: options.candidateChunks,
-      existingChunks: options.existingChunks,
-      evidencePairs: pairList,
-    });
+    parsed = await generate(
+      {
+        candidateVersionId: options.candidateVersionId,
+        existingVersionId: options.existingVersionId,
+        candidateChunks: options.candidateChunks,
+        existingChunks: options.existingChunks,
+        evidencePairs: pairList,
+      },
+      "compare",
+    );
     if (!parsed) return fallback("Output model tidak memenuhi kontrak terstruktur.");
   }
 
@@ -193,6 +224,8 @@ export async function analyzeOverlap(options: {
     materialRecommendation &&
     (parsed.changedRules.length === 0 ||
       parsed.changedRules.some((rule) => rule.effectiveFrom === null));
+  const candidateText = options.candidateChunks.map((chunk) => chunk.text).join("\n");
+  const explicitReplacement = /mengganti(?:kan)?|mencabut/i.test(candidateText);
   if (
     parsed.existingVersionId !== options.existingVersionId ||
     !provenanceValid ||
@@ -201,6 +234,7 @@ export async function analyzeOverlap(options: {
     parsed.conflicts.length > 0 ||
     (materialRecommendation && parsed.evidence.length === 0) ||
     (parsed.recommendation === "PARTIALLY_OVERRIDES" && parsed.sharedTopics.length === 0) ||
+    (parsed.recommendation === "REPLACES" && !explicitReplacement) ||
     missingEffectiveDate ||
     options.coverageWarning
   ) {

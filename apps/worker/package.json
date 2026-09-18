@@ -10,8 +10,9 @@
     "test": "vitest run --pool=threads --maxWorkers=1"
   },
   "dependencies": {
-    "@anvia/openai": "1.1.3",
+    "@anvia/openai": "1.1.5",
     "@iom/agents": "workspace:*",
+    "@iom/observability": "workspace:*",
     "@iom/config": "workspace:*",
     "@iom/contracts": "workspace:*",
     "@iom/database": "workspace:*",

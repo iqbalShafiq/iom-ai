@@ -4,8 +4,8 @@ import { reconcileModelPreference } from "./model-preference";
 
 const models = [
   {
-    id: "gpt-5.6-luna",
-    label: "GPT 5.6 Luna",
+    id: "deepseek-v4-flash-0731",
+    label: "DeepSeek V4 Flash 0731",
     description: "Fast",
     supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
     defaultReasoningEffort: "low",
@@ -17,11 +17,13 @@ const models = [
 
 describe("reconcileModelPreference", () => {
   it("keeps a supported reasoning effort", () => {
-    expect(reconcileModelPreference(models, "gpt-5.6-luna", "xhigh")?.effort).toBe("xhigh");
+    expect(reconcileModelPreference(models, "deepseek-v4-flash-0731", "xhigh")?.effort).toBe(
+      "xhigh",
+    );
   });
 
   it("falls back to the server default for an unsupported effort", () => {
-    expect(reconcileModelPreference(models, "gpt-5.6-luna", "none")?.effort).toBe("low");
+    expect(reconcileModelPreference(models, "deepseek-v4-flash-0731", "none")?.effort).toBe("low");
   });
 
   it("fails closed when the catalog is empty", () => {

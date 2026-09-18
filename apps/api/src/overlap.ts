@@ -5,6 +5,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { audit } from "./audit.js";
 import { authMiddleware, requireHr } from "./auth.js";
+import { enqueueLangfuseScore } from "./langfuse-jobs.js";
 import type { AppBindings } from "./types.js";
 
 const evidenceSchema = z.array(
@@ -570,6 +571,11 @@ export function registerOverlapRoutes(app: Hono<AppBindings>, modelId: string) {
         { error: "Dokumen existing sudah tidak tersedia untuk direlasikan." },
         409,
       );
+    await enqueueLangfuseScore(database, {
+      kind: "overlap",
+      entityId: matchId,
+      revision: saved.decision.updatedAt.toISOString(),
+    });
     await audit(database, {
       actorId,
       action:
