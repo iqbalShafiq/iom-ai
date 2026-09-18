@@ -5,15 +5,21 @@ import { Readable } from "node:stream";
 import { createEventStreamResponse } from "@anvia/server";
 import type { ServerConfig } from "@iom/config";
 import { createPolicySchema, createUploadBatchSchema, paginationSchema } from "@iom/contracts";
+import type { Prisma } from "@iom/database";
 import { assertIomTransition } from "@iom/database/iom";
 import { enqueueJob } from "@iom/database/jobs";
 import { getPublishReadiness, refreshIomPublishReadiness } from "@iom/database/readiness";
-import { LocalFileStorage, MAX_BATCH_FILES, validateDocumentFile } from "@iom/documents";
+import {
+  LocalFileStorage,
+  MAX_BATCH_FILES,
+  relevantAnnotations,
+  validateDocumentFile,
+} from "@iom/documents";
 import type { Hono } from "hono";
 import { z } from "zod";
 import { audit } from "./audit.js";
 import { authMiddleware, requireHr } from "./auth.js";
-import { needsConfidentialityReview } from "./confidentiality-review.js";
+import { needsConfidentialityReview, needsPolicyImpactReview } from "./confidentiality-review.js";
 import { rateLimit } from "./rate-limit.js";
 import type { AppBindings } from "./types.js";
 
@@ -30,12 +36,45 @@ const reviewSchema = z.object({
     .max(200),
 });
 
-const relationSchema = z.object({
-  targetVersionId: z.string().uuid(),
-  type: z.enum(["REPLACES", "COMPLEMENTS", "PARTIALLY_OVERRIDES", "RELATED"]),
-  note: z.string().trim().max(2_000).optional(),
-  topicScope: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
-});
+const relationSchema = z
+  .object({
+    targetVersionId: z.string().uuid(),
+    type: z.enum(["REPLACES", "COMPLEMENTS", "PARTIALLY_OVERRIDES", "RELATED"]),
+    note: z.string().trim().max(2_000).optional(),
+    topicScope: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+  })
+  .superRefine((value, refinement) => {
+    if (
+      value.type === "PARTIALLY_OVERRIDES" &&
+      (!value.topicScope || value.topicScope.length === 0)
+    ) {
+      refinement.addIssue({
+        code: "custom",
+        path: ["topicScope"],
+        message: "Topic scope wajib diisi untuk partial override.",
+      });
+    }
+    if (value.type !== "PARTIALLY_OVERRIDES" && value.topicScope !== undefined) {
+      refinement.addIssue({
+        code: "custom",
+        path: ["topicScope"],
+        message: "Topic scope hanya boleh digunakan untuk partial override.",
+      });
+    }
+  });
+
+function normalizeTopicScope(topics: readonly string[] | undefined): string[] {
+  const seen = new Set<string>();
+  return (topics ?? []).reduce<string[]>((result, topic) => {
+    const value = topic.trim();
+    const key = value.toLocaleLowerCase("id-ID");
+    if (value && !seen.has(key)) {
+      seen.add(key);
+      result.push(value);
+    }
+    return result;
+  }, []);
+}
 
 const policyDecisionReviewSchema = z.object({
   visibility: z.enum(["EMPLOYEE_SAFE", "HR_ONLY"]),
@@ -271,7 +310,19 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
           : { status: "PUBLISHED", chunks: { some: { visibility: "EMPLOYEE_SAFE" } } },
       orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }],
       take: 100,
-      include: { document: true, _count: { select: { chunks: true } } },
+      select: {
+        id: true,
+        iomNumber: true,
+        title: true,
+        revision: true,
+        chunkingStrategy: true,
+        status: true,
+        publicationDate: true,
+        effectiveFrom: true,
+        effectiveUntil: true,
+        metadataConfirmedAt: true,
+        _count: { select: { chunks: true } },
+      },
     });
     return context.json({ versions });
   });
@@ -289,15 +340,23 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
             visibility: true,
             decisions: {
               orderBy: { createdAt: "desc" },
-              take: 1,
-              select: { reviewedAt: true },
+              select: { policyId: true, reviewedAt: true },
             },
           },
         },
       },
     });
     return candidates
-      .filter((version) => needsConfidentialityReview(version.chunks))
+      .filter((version) =>
+        needsConfidentialityReview(
+          version.chunks.map((chunk) => ({
+            visibility: chunk.visibility,
+            decisions: chunk.decisions.filter(
+              (decision) => decision.policyId === version.confidentialityPolicyId,
+            ),
+          })),
+        ),
+      )
       .map(({ chunks: _chunks, ...version }) => version);
   }
 
@@ -322,7 +381,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         chunks: {
           where: actor.role === "HR_ADMIN" ? {} : { visibility: "EMPLOYEE_SAFE" },
           orderBy: { ordinal: "asc" },
-          include: { decisions: { orderBy: { createdAt: "desc" }, take: 1 } },
+          include: { decisions: { orderBy: { createdAt: "desc" } } },
         },
         annotations: true,
         outgoingRelations: { include: { targetVersion: true } },
@@ -331,6 +390,12 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
       },
     });
     if (!version) return context.json({ error: "IOM tidak ditemukan." }, 404);
+    const currentChunks = version.chunks.map((chunk) => ({
+      ...chunk,
+      decisions: chunk.decisions
+        .filter((decision) => decision.policyId === version.confidentialityPolicyId)
+        .slice(0, 1),
+    }));
     if (actor.role === "EMPLOYEE") {
       void audit(context.get("database"), {
         actorId: actor.id,
@@ -340,8 +405,106 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         correlationId: context.get("correlationId"),
         resultStatus: "SUCCESS",
       });
+      return context.json({
+        version: {
+          id: version.id,
+          iomNumber: version.iomNumber,
+          title: version.title,
+          revision: version.revision,
+          status: version.status,
+          publicationDate: version.publicationDate,
+          effectiveFrom: version.effectiveFrom,
+          effectiveUntil: version.effectiveUntil,
+          chunks: currentChunks.map((chunk) => ({
+            ordinal: chunk.ordinal,
+            pageStart: chunk.pageStart,
+            pageEnd: chunk.pageEnd,
+            section: chunk.section,
+            text: chunk.publicText ?? chunk.text,
+            visibility: "EMPLOYEE_SAFE" as const,
+          })),
+        },
+      });
     }
-    return context.json({ version });
+    return context.json({
+      version: {
+        id: version.id,
+        documentId: version.documentId,
+        iomNumber: version.iomNumber,
+        title: version.title,
+        revision: version.revision,
+        chunkingStrategy: version.chunkingStrategy,
+        status: version.status,
+        publicationDate: version.publicationDate,
+        effectiveFrom: version.effectiveFrom,
+        effectiveUntil: version.effectiveUntil,
+        confidentialityPolicyId: version.confidentialityPolicyId,
+        metadataConfirmedAt: version.metadataConfirmedAt,
+        publishedAt: version.publishedAt,
+        chunks: currentChunks.map((chunk) => ({
+          id: chunk.id,
+          ordinal: chunk.ordinal,
+          pageStart: chunk.pageStart,
+          pageEnd: chunk.pageEnd,
+          section: chunk.section,
+          text: chunk.text,
+          publicText: chunk.publicText,
+          visibility: chunk.visibility,
+          classificationConfidence: chunk.classificationConfidence,
+          decisions: chunk.decisions.map((decision) => ({
+            id: decision.id,
+            visibility: decision.visibility,
+            rationale: decision.rationale,
+            reviewedAt: decision.reviewedAt,
+            categories: decision.categories,
+            sensitiveSpans: decision.sensitiveSpans,
+            conflictsWithMarker: decision.conflictsWithMarker,
+            modelId: decision.modelId,
+          })),
+        })),
+        outgoingRelations: version.outgoingRelations.map((relation) => ({
+          id: relation.id,
+          type: relation.type,
+          topicScope: relation.topicScope,
+          note: relation.note,
+          targetVersion: {
+            id: relation.targetVersion.id,
+            iomNumber: relation.targetVersion.iomNumber,
+            title: relation.targetVersion.title,
+            revision: relation.targetVersion.revision,
+            status: relation.targetVersion.status,
+            effectiveFrom: relation.targetVersion.effectiveFrom,
+            effectiveUntil: relation.targetVersion.effectiveUntil,
+          },
+        })),
+        incomingRelations: version.incomingRelations.map((relation) => ({
+          id: relation.id,
+          type: relation.type,
+          topicScope: relation.topicScope,
+          note: relation.note,
+          sourceVersion: {
+            id: relation.sourceVersion.id,
+            iomNumber: relation.sourceVersion.iomNumber,
+            title: relation.sourceVersion.title,
+            revision: relation.sourceVersion.revision,
+            status: relation.sourceVersion.status,
+            effectiveFrom: relation.sourceVersion.effectiveFrom,
+            effectiveUntil: relation.sourceVersion.effectiveUntil,
+          },
+        })),
+        uploadedFile: version.uploadedFile
+          ? {
+              id: version.uploadedFile.id,
+              originalName: version.uploadedFile.originalName,
+              mimeType: version.uploadedFile.mimeType,
+              stage: version.uploadedFile.stage,
+              progress: version.uploadedFile.progress,
+              safeError: version.uploadedFile.safeError,
+              pageCount: version.uploadedFile.pageCount,
+            }
+          : null,
+      },
+    });
   });
 
   app.patch("/iom/:versionId", requireHr(), async (context) => {
@@ -423,21 +586,15 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
 
   app.get("/iom/:versionId/file", async (context) => {
     const actor = context.get("actor");
+    if (actor.role !== "HR_ADMIN")
+      return context.json({ error: "Preview file asli hanya tersedia untuk HR." }, 403);
     const version = await context.get("database").iomVersion.findFirst({
       where: {
         id: context.req.param("versionId"),
-        ...(actor.role === "HR_ADMIN" ? {} : { status: "PUBLISHED" as const }),
       },
       include: { uploadedFile: true },
     });
     if (!version?.uploadedFile) return context.json({ error: "File tidak ditemukan." }, 404);
-    if (actor.role !== "HR_ADMIN") {
-      const unsafe = await context
-        .get("database")
-        .iomChunk.count({ where: { versionId: version.id, visibility: { not: "EMPLOYEE_SAFE" } } });
-      if (unsafe > 0)
-        return context.json({ error: "Preview file asli hanya tersedia untuk HR." }, 403);
-    }
     const stream = Readable.toWeb(
       createReadStream(storage.absolutePath(version.uploadedFile.storageKey)),
     ) as ReadableStream;
@@ -454,19 +611,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     const versionId = context.req.param("versionId");
     const version = await database.iomVersion.findUnique({
       where: { id: versionId },
-      include: {
-        annotations: {
-          where: {
-            kind: "CONFIDENTIAL",
-            pageStart: null,
-            pageEnd: null,
-            charStart: null,
-            charEnd: null,
-            section: null,
-          },
-          take: 1,
-        },
-      },
+      include: { annotations: { where: { kind: "CONFIDENTIAL" } } },
     });
     if (!version) return context.json({ error: "IOM tidak ditemukan." }, 404);
     if (!["IN_REVIEW", "READY_TO_PUBLISH"].includes(version.status))
@@ -485,7 +630,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
           where: { policyId: version.confidentialityPolicyId },
           orderBy: { createdAt: "desc" },
           take: 1,
-          select: { id: true },
+          select: { id: true, sensitiveSpans: true, categories: true },
         },
       },
     });
@@ -493,19 +638,21 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     const chunkById = new Map(reviewedChunks.map((chunk) => [chunk.id, chunk]));
     if (reviewedChunks.length !== parsed.data.decisions.length)
       return context.json({ error: "Chunk review tidak valid." }, 400);
-    if (
-      version.annotations.length > 0 &&
-      parsed.data.decisions.some((decision) => decision.visibility === "EMPLOYEE_SAFE")
-    ) {
+    const attemptsHardMarkerDowngrade = parsed.data.decisions.some((decision) => {
+      if (decision.visibility !== "EMPLOYEE_SAFE") return false;
+      const chunk = chunkById.get(decision.chunkId);
+      return chunk ? relevantAnnotations(version.annotations, chunk).length > 0 : false;
+    });
+    if (attemptsHardMarkerDowngrade) {
       return context.json(
         { error: "Penanda CONFIDENTIAL manual tidak dapat diturunkan menjadi akses karyawan." },
         409,
       );
     }
     const decisionByChunk = new Map(
-      reviewedChunks.map((chunk) => [chunk.id, chunk.decisions[0]?.id ?? null]),
+      reviewedChunks.map((chunk) => [chunk.id, chunk.decisions[0] ?? null]),
     );
-    if ([...decisionByChunk.values()].some((decisionId) => !decisionId))
+    if ([...decisionByChunk.values()].some((decision) => !decision))
       return context.json(
         { error: "Keputusan klasifikasi belum tersedia untuk semua chunk." },
         409,
@@ -525,9 +672,25 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
                 : null,
           },
         });
-        await transaction.confidentialityDecision.update({
-          where: { id: decisionByChunk.get(decision.chunkId) ?? "" },
-          data: { reviewedById: actor.id, reviewedAt },
+        const previousDecision = decisionByChunk.get(decision.chunkId);
+        if (!previousDecision) throw new Error("CONFIDENTIALITY_DECISION_NOT_FOUND");
+        await transaction.confidentialityDecision.create({
+          data: {
+            chunkId: decision.chunkId,
+            policyId: version.confidentialityPolicyId ?? "",
+            visibility: decision.visibility,
+            confidence: 1,
+            categories: ["HR_MANUAL_REVIEW"],
+            rationale: decision.reason,
+            sensitiveSpans:
+              decision.visibility === "HR_ONLY" && Array.isArray(previousDecision.sensitiveSpans)
+                ? (previousDecision.sensitiveSpans as Prisma.InputJsonValue)
+                : [],
+            conflictsWithMarker: false,
+            modelId: "human-review",
+            reviewedById: actor.id,
+            reviewedAt,
+          },
         });
         await transaction.iomAnnotation.create({
           data: {
@@ -607,6 +770,17 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
             where: { id: relation.targetVersion.id },
             data: { status: "SUPERSEDED", effectiveUntil: supersededAt },
           });
+          const targetVersion = await transaction.iomVersion.findUnique({
+            where: { id: relation.targetVersion.id },
+            select: { sourceHash: true },
+          });
+          if (targetVersion) {
+            await enqueueJob(transaction, {
+              type: "INDEX_VERSION",
+              payload: { versionId: relation.targetVersion.id },
+              idempotencyKey: `index:${relation.targetVersion.id}:${targetVersion.sourceHash}:superseded`,
+            });
+          }
         }
         await transaction.iomVersion.update({
           where: { id: versionId },
@@ -673,7 +847,9 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
           type: parsed.data.type,
           confirmedById: actor.id,
           ...(parsed.data.note ? { note: parsed.data.note } : {}),
-          ...(parsed.data.topicScope ? { topicScope: parsed.data.topicScope } : {}),
+          ...(parsed.data.topicScope
+            ? { topicScope: normalizeTopicScope(parsed.data.topicScope) }
+            : {}),
         },
       });
       return created;
@@ -703,14 +879,49 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
   });
 
   app.get("/confidentiality/policies", async (context) => {
-    const policies = await context.get("database").confidentialityPolicy.findMany({
+    const records = await context.get("database").confidentialityPolicy.findMany({
       orderBy: { version: "desc" },
       include: {
-        _count: { select: { decisions: true } },
         decisions: {
-          select: { visibility: true, conflictsWithMarker: true },
+          orderBy: { createdAt: "desc" },
+          select: {
+            chunkId: true,
+            visibility: true,
+            conflictsWithMarker: true,
+            reviewedAt: true,
+          },
         },
       },
+    });
+    const policies = records.map((policy) => {
+      const latestByChunk = new Map<
+        string,
+        { visibility: string; conflictsWithMarker: boolean; reviewedAt: Date | null }
+      >();
+      for (const decision of policy.decisions) {
+        if (!latestByChunk.has(decision.chunkId)) latestByChunk.set(decision.chunkId, decision);
+      }
+      return {
+        id: policy.id,
+        version: policy.version,
+        name: policy.name,
+        instructions: policy.instructions,
+        examples: policy.examples,
+        status: policy.status,
+        activatedAt: policy.activatedAt,
+        createdAt: policy.createdAt,
+        updatedAt: policy.updatedAt,
+        _count: { decisions: latestByChunk.size },
+        decisions: [...latestByChunk.values()],
+      };
+    });
+    void audit(context.get("database"), {
+      actorId: context.get("actor").id,
+      action: "CONFIDENTIALITY_POLICY_LIST",
+      entityType: "ConfidentialityPolicy",
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      safeMetadata: { count: policies.length },
     });
     return context.json({ policies });
   });
@@ -718,15 +929,31 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
   app.post("/confidentiality/policies", async (context) => {
     const parsed = createPolicySchema.safeParse(await context.req.json().catch(() => null));
     if (!parsed.success) return context.json({ error: "Policy tidak valid." }, 400);
-    const highest = await context
-      .get("database")
-      .confidentialityPolicy.aggregate({ _max: { version: true } });
-    const policy = await context.get("database").confidentialityPolicy.create({
-      data: {
-        ...parsed.data,
-        version: (highest._max.version ?? 0) + 1,
-        createdById: context.get("actor").id,
+    const database = context.get("database");
+    const actor = context.get("actor");
+    const policy = await database.$transaction(
+      async (transaction) => {
+        const highest = await transaction.confidentialityPolicy.aggregate({
+          _max: { version: true },
+        });
+        return transaction.confidentialityPolicy.create({
+          data: {
+            ...parsed.data,
+            version: (highest._max.version ?? 0) + 1,
+            createdById: actor.id,
+          },
+        });
       },
+      { isolationLevel: "Serializable" },
+    );
+    await audit(database, {
+      actorId: actor.id,
+      action: "CONFIDENTIALITY_POLICY_CREATE",
+      entityType: "ConfidentialityPolicy",
+      entityId: policy.id,
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      policyVersion: policy.version,
     });
     return context.json({ policy }, 201);
   });
@@ -734,16 +961,106 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
   app.post("/confidentiality/policies/:policyId/evaluate", async (context) => {
     const database = context.get("database");
     const policyId = context.req.param("policyId");
-    await database.confidentialityPolicy.update({
-      where: { id: policyId },
-      data: { status: "EVALUATING" },
+    const actor = context.get("actor");
+    const result = await database.$transaction(async (transaction) => {
+      const updated = await transaction.confidentialityPolicy.updateMany({
+        where: { id: policyId, status: "DRAFT" },
+        data: { status: "EVALUATING" },
+      });
+      if (updated.count === 0) return null;
+      const policy = await transaction.confidentialityPolicy.findUnique({
+        where: { id: policyId },
+        select: { version: true },
+      });
+      const job = await enqueueJob(transaction, {
+        type: "EVALUATE_POLICY",
+        payload: { policyId },
+        idempotencyKey: `policy-eval:${policyId}:${randomUUID()}`,
+      });
+      return { job, version: policy?.version };
     });
-    const job = await enqueueJob(database, {
-      type: "EVALUATE_POLICY",
-      payload: { policyId },
-      idempotencyKey: `policy-eval:${policyId}`,
+    if (!result) return context.json({ error: "Hanya draft policy yang dapat dianalisis." }, 409);
+    await audit(database, {
+      actorId: actor.id,
+      action: "CONFIDENTIALITY_POLICY_EVALUATE",
+      entityType: "ConfidentialityPolicy",
+      entityId: policyId,
+      correlationId: context.get("correlationId"),
+      resultStatus: "STARTED",
+      ...(result.version ? { policyVersion: result.version } : {}),
     });
-    return context.json({ jobId: job.id }, 202);
+    return context.json({ jobId: result.job.id }, 202);
+  });
+
+  app.get("/confidentiality/policies/:policyId/impact", async (context) => {
+    const database = context.get("database");
+    const policyId = context.req.param("policyId");
+    const policy = await database.confidentialityPolicy.findFirst({
+      where: { id: policyId, status: "EVALUATING" },
+      select: { id: true, version: true },
+    });
+    if (!policy) return context.json({ error: "Impact policy tidak tersedia." }, 404);
+    const chunks = await database.iomChunk.findMany({
+      where: {
+        version: { status: { in: ["IN_REVIEW", "READY_TO_PUBLISH", "PUBLISHED", "SUPERSEDED"] } },
+      },
+      orderBy: [{ versionId: "asc" }, { ordinal: "asc" }],
+      select: {
+        id: true,
+        text: true,
+        visibility: true,
+        pageStart: true,
+        section: true,
+        version: { select: { id: true, iomNumber: true, title: true } },
+        decisions: {
+          where: { policyId },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            visibility: true,
+            confidence: true,
+            rationale: true,
+            conflictsWithMarker: true,
+            reviewedAt: true,
+          },
+        },
+      },
+    });
+    const pending = chunks.filter((chunk) =>
+      needsPolicyImpactReview(chunk.visibility, chunk.decisions[0]),
+    );
+    await audit(database, {
+      actorId: context.get("actor").id,
+      action: "CONFIDENTIALITY_POLICY_IMPACT_VIEW",
+      entityType: "ConfidentialityPolicy",
+      entityId: policyId,
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      policyVersion: policy.version,
+      safeMetadata: { analyzedCount: chunks.length, pendingCount: pending.length },
+    });
+    return context.json({
+      impact: {
+        analyzedCount: chunks.length,
+        pendingCount: pending.length,
+        items: pending.slice(0, 100).map((chunk) => ({
+          chunkId: chunk.id,
+          versionId: chunk.version.id,
+          iomNumber: chunk.version.iomNumber,
+          title: chunk.version.title,
+          currentVisibility: chunk.visibility,
+          proposedVisibility: chunk.decisions[0]?.visibility ?? "NEEDS_REVIEW",
+          hasDecision: Boolean(chunk.decisions[0]),
+          confidence: chunk.decisions[0]?.confidence ?? 0,
+          rationale: chunk.decisions[0]?.rationale ?? "Klasifikasi belum tersedia.",
+          conflictsWithMarker: chunk.decisions[0]?.conflictsWithMarker ?? false,
+          page: chunk.pageStart,
+          section: chunk.section,
+          excerpt: chunk.text.slice(0, 500),
+        })),
+        truncated: pending.length > 100,
+      },
+    });
   });
 
   app.post("/confidentiality/policies/:policyId/decisions/:chunkId/review", async (context) => {
@@ -757,10 +1074,37 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
       database.confidentialityPolicy.findFirst({
         where: { id: policyId, status: "EVALUATING" },
       }),
-      database.iomChunk.findUnique({ where: { id: chunkId }, select: { id: true } }),
+      database.iomChunk.findUnique({
+        where: { id: chunkId },
+        select: {
+          id: true,
+          pageStart: true,
+          pageEnd: true,
+          section: true,
+          version: { select: { annotations: true } },
+          decisions: {
+            where: { policyId },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { id: true },
+          },
+        },
+      }),
     ]);
-    if (!policy || !chunk)
+    if (!policy || !chunk?.decisions[0])
       return context.json({ error: "Policy atau potongan dokumen tidak ditemukan." }, 404);
+    if (
+      parsed.data.visibility === "EMPLOYEE_SAFE" &&
+      relevantAnnotations(
+        chunk.version.annotations.filter((annotation) => annotation.kind === "CONFIDENTIAL"),
+        chunk,
+      ).length > 0
+    ) {
+      return context.json(
+        { error: "Penanda CONFIDENTIAL manual tidak dapat diturunkan menjadi akses karyawan." },
+        409,
+      );
+    }
     const decision = await database.confidentialityDecision.create({
       data: {
         chunkId,
@@ -792,82 +1136,98 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
   app.post("/confidentiality/policies/:policyId/activate", async (context) => {
     const database = context.get("database");
     const policyId = context.req.param("policyId");
-    const policy = await database.confidentialityPolicy.findFirst({
-      where: { id: policyId, status: "EVALUATING" },
-    });
-    if (!policy) return context.json({ error: "Policy belum siap diaktifkan." }, 409);
-    const chunks = await database.iomChunk.findMany({
-      where: {
-        version: { status: { in: ["IN_REVIEW", "READY_TO_PUBLISH", "PUBLISHED"] } },
+    const activation = await database.$transaction(
+      async (transaction) => {
+        const policy = await transaction.confidentialityPolicy.findFirst({
+          where: { id: policyId, status: "EVALUATING" },
+        });
+        if (!policy) return { kind: "NOT_READY" as const };
+        const chunks = await transaction.iomChunk.findMany({
+          where: {
+            version: {
+              status: { in: ["IN_REVIEW", "READY_TO_PUBLISH", "PUBLISHED", "SUPERSEDED"] },
+            },
+          },
+          select: {
+            id: true,
+            text: true,
+            visibility: true,
+            versionId: true,
+            version: { select: { status: true, sourceHash: true } },
+            decisions: {
+              where: { policyId },
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              select: { visibility: true, conflictsWithMarker: true, reviewedAt: true },
+            },
+          },
+        });
+        const unresolvedCount = chunks.filter((chunk) =>
+          needsPolicyImpactReview(chunk.visibility, chunk.decisions[0]),
+        ).length;
+        if (unresolvedCount > 0) {
+          return { kind: "UNRESOLVED" as const, unresolvedCount };
+        }
+        const indexableVersions = new Map<string, string>();
+        for (const chunk of chunks) {
+          if (chunk.version.status === "PUBLISHED" || chunk.version.status === "SUPERSEDED")
+            indexableVersions.set(chunk.versionId, chunk.version.sourceHash);
+        }
+        await transaction.confidentialityPolicy.updateMany({
+          where: { status: "ACTIVE" },
+          data: { status: "RETIRED" },
+        });
+        await transaction.confidentialityPolicy.update({
+          where: { id: policyId },
+          data: { status: "ACTIVE", activatedAt: new Date() },
+        });
+        for (const chunk of chunks) {
+          const decision = chunk.decisions[0];
+          if (!decision) continue;
+          await transaction.iomChunk.update({
+            where: { id: chunk.id },
+            data: {
+              visibility: decision.visibility,
+              publicText: decision.visibility === "EMPLOYEE_SAFE" ? chunk.text : null,
+              vectorGeneration: null,
+            },
+          });
+        }
+        const versionIds = [...new Set(chunks.map((chunk) => chunk.versionId))];
+        if (versionIds.length > 0)
+          await transaction.iomVersion.updateMany({
+            where: { id: { in: versionIds } },
+            data: { confidentialityPolicyId: policyId },
+          });
+        for (const [versionId, sourceHash] of indexableVersions) {
+          await enqueueJob(transaction, {
+            type: "INDEX_VERSION",
+            payload: { versionId },
+            idempotencyKey: `index:${versionId}:${sourceHash}:policy-${policy.version}`,
+          });
+        }
+        return {
+          kind: "ACTIVATED" as const,
+          policyVersion: policy.version,
+          reclassifiedChunks: chunks.length,
+          reindexJobs: indexableVersions.size,
+          versionIds,
+        };
       },
-      select: {
-        id: true,
-        text: true,
-        versionId: true,
-        version: { select: { status: true, sourceHash: true } },
-        decisions: {
-          where: { policyId },
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { visibility: true, conflictsWithMarker: true },
-        },
-      },
-    });
-    const unresolved = chunks.filter((chunk) => {
-      const decision = chunk.decisions[0];
-      return !decision || decision.visibility === "NEEDS_REVIEW" || decision.conflictsWithMarker;
-    });
-    if (unresolved.length > 0) {
+      { isolationLevel: "Serializable" },
+    );
+    if (activation.kind === "NOT_READY")
+      return context.json({ error: "Policy belum siap diaktifkan." }, 409);
+    if (activation.kind === "UNRESOLVED") {
       return context.json(
         {
           error: "Impact policy belum selesai direview.",
-          unresolvedCount: unresolved.length,
-          unresolvedChunkIds: unresolved.slice(0, 50).map((chunk) => chunk.id),
+          unresolvedCount: activation.unresolvedCount,
         },
         409,
       );
     }
-    const publishedVersions = new Map<string, string>();
-    for (const chunk of chunks) {
-      if (chunk.version.status === "PUBLISHED")
-        publishedVersions.set(chunk.versionId, chunk.version.sourceHash);
-    }
-    await database.$transaction(async (transaction) => {
-      await transaction.confidentialityPolicy.updateMany({
-        where: { status: "ACTIVE" },
-        data: { status: "RETIRED" },
-      });
-      await transaction.confidentialityPolicy.update({
-        where: { id: policyId },
-        data: { status: "ACTIVE", activatedAt: new Date() },
-      });
-      for (const chunk of chunks) {
-        const decision = chunk.decisions[0];
-        if (!decision) continue;
-        await transaction.iomChunk.update({
-          where: { id: chunk.id },
-          data: {
-            visibility: decision.visibility,
-            publicText: decision.visibility === "EMPLOYEE_SAFE" ? chunk.text : null,
-            vectorGeneration: null,
-          },
-        });
-      }
-      const versionIds = [...new Set(chunks.map((chunk) => chunk.versionId))];
-      if (versionIds.length > 0)
-        await transaction.iomVersion.updateMany({
-          where: { id: { in: versionIds } },
-          data: { confidentialityPolicyId: policyId },
-        });
-      for (const [versionId, sourceHash] of publishedVersions) {
-        await enqueueJob(transaction, {
-          type: "INDEX_VERSION",
-          payload: { versionId },
-          idempotencyKey: `index:${versionId}:${sourceHash}:policy-${policy.version}`,
-        });
-      }
-    });
-    for (const versionId of new Set(chunks.map((chunk) => chunk.versionId))) {
+    for (const versionId of activation.versionIds) {
       await refreshIomPublishReadiness(database, versionId);
     }
     await audit(database, {
@@ -877,10 +1237,13 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
       entityId: policyId,
       correlationId: context.get("correlationId"),
       resultStatus: "SUCCESS",
-      policyVersion: policy.version,
-      safeMetadata: { reclassifiedChunks: chunks.length, reindexJobs: publishedVersions.size },
+      policyVersion: activation.policyVersion,
+      safeMetadata: {
+        reclassifiedChunks: activation.reclassifiedChunks,
+        reindexJobs: activation.reindexJobs,
+      },
     });
-    return context.json({ status: "ACTIVE", reindexJobs: publishedVersions.size });
+    return context.json({ status: "ACTIVE", reindexJobs: activation.reindexJobs });
   });
 
   app.get("/audit", authMiddleware(), requireHr(), async (context) => {

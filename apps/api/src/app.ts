@@ -22,7 +22,7 @@ export function createApp(database: Database, config: ServerConfig) {
       allowHeaders: ["Content-Type", "X-CSRF-Token"],
       // @anvia/client validates this protocol header on streamed responses.
       exposeHeaders: ["x-anvia-stream-protocol", "x-iom-conversation-id"],
-      allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     }),
   );
   app.use("*", async (context, next) => {
@@ -52,7 +52,8 @@ export function createApp(database: Database, config: ServerConfig) {
       JSON.stringify({
         level: "error",
         correlationId: context.get("correlationId"),
-        message: error.message,
+        message: "Unhandled API error",
+        errorKind: error.constructor.name,
       }),
     );
     return context.json(

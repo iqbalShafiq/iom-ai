@@ -30,7 +30,14 @@ import type { AppBindings } from "./types.js";
 
 async function deniedFingerprints(database: Database) {
   const decisions = await database.confidentialityDecision.findMany({
-    where: { visibility: "HR_ONLY" },
+    where: {
+      visibility: "HR_ONLY",
+      policy: { status: "ACTIVE" },
+      chunk: {
+        visibility: "HR_ONLY",
+        version: { status: { in: ["PUBLISHED", "SUPERSEDED"] } },
+      },
+    },
     orderBy: { createdAt: "desc" },
     take: 200,
     include: { chunk: true },
@@ -255,7 +262,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
       models: catalog,
       defaults: {
         modelId: catalog[0]?.id ?? "gpt-5.6-luna",
-        reasoningEffort: catalog[0]?.defaultReasoningEffort ?? "low",
+        reasoningEffort: catalog[0]?.defaultReasoningEffort ?? "high",
       },
     }),
   );
@@ -425,10 +432,6 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
                 typeof (error as { code?: unknown })?.code === "string"
                   ? (error as { code: string }).code
                   : undefined,
-              providerMessage:
-                typeof (error as { message?: unknown })?.message === "string"
-                  ? (error as { message: string }).message
-                  : undefined,
             }),
           );
         },
@@ -444,10 +447,6 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
           typeof (error as { status?: unknown })?.status === "number"
             ? (error as { status: number }).status
             : undefined;
-        const providerMessage =
-          typeof (error as { message?: unknown })?.message === "string"
-            ? (error as { message: string }).message
-            : undefined;
         console.error(
           JSON.stringify({
             level: "error",
@@ -458,7 +457,6 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
             reasoningEffort: selection.reasoningEffort,
             errorKind: error instanceof Error ? error.constructor.name : "UnknownError",
             providerStatus,
-            providerMessage,
             providerKind:
               typeof (error as { kind?: unknown })?.kind === "string"
                 ? (error as { kind: string }).kind

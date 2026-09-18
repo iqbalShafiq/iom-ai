@@ -23,6 +23,29 @@ interface Policy {
   decisions?: Array<{ visibility: string; conflictsWithMarker: boolean }>;
 }
 
+type PolicyImpactItem = {
+  chunkId: string;
+  versionId: string;
+  iomNumber: string;
+  title: string;
+  currentVisibility: string;
+  proposedVisibility: string;
+  hasDecision: boolean;
+  confidence: number;
+  rationale: string;
+  conflictsWithMarker: boolean;
+  page?: number | null;
+  section?: string | null;
+  excerpt: string;
+};
+
+type PolicyImpact = {
+  analyzedCount: number;
+  pendingCount: number;
+  items: PolicyImpactItem[];
+  truncated: boolean;
+};
+
 type SettingsTab = "draft" | "history";
 
 const settingsTabs = [
@@ -55,12 +78,23 @@ function formatPolicyTimestamp(date: Date) {
 }
 
 export const Route = createFileRoute("/_app/hr/settings")({
-  loader: () => apiFetch<{ policies: Policy[] }>("/confidentiality/policies"),
+  loader: async () => {
+    const { policies } = await apiFetch<{ policies: Policy[] }>("/confidentiality/policies");
+    const evaluating = policies.find((policy) => policy.status === "EVALUATING");
+    const impact = evaluating
+      ? (
+          await apiFetch<{ impact: PolicyImpact }>(
+            `/confidentiality/policies/${evaluating.id}/impact`,
+          )
+        ).impact
+      : null;
+    return { policies, evaluatingPolicyId: evaluating?.id ?? null, impact };
+  },
   component: SettingsPage,
 });
 
 function SettingsPage() {
-  const { policies } = Route.useLoaderData();
+  const { policies, evaluatingPolicyId, impact } = Route.useLoaderData();
   const router = useRouter();
   const latestPolicy = policies[0];
   const [activeTab, setActiveTab] = useState<SettingsTab>("draft");
@@ -69,6 +103,10 @@ function SettingsPage() {
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [impactChoices, setImpactChoices] = useState<Record<string, "EMPLOYEE_SAFE" | "HR_ONLY">>(
+    {},
+  );
+  const [impactReasons, setImpactReasons] = useState<Record<string, string>>({});
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -94,9 +132,35 @@ function SettingsPage() {
 
   async function action(policy: Policy, actionName: "evaluate" | "activate") {
     setBusy(true);
+    setError("");
     try {
       await apiFetch(`/confidentiality/policies/${policy.id}/${actionName}`, { method: "POST" });
       await router.invalidate();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Aksi policy gagal diproses.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveImpactDecision(item: PolicyImpactItem) {
+    if (!evaluatingPolicyId) return;
+    const visibility = impactChoices[item.chunkId];
+    const reason = impactReasons[item.chunkId]?.trim();
+    if (!visibility || !reason || reason.length < 3) {
+      setError("Pilih akses final dan isi alasan minimal 3 karakter.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await apiFetch(
+        `/confidentiality/policies/${evaluatingPolicyId}/decisions/${item.chunkId}/review`,
+        { method: "POST", body: JSON.stringify({ visibility, reason }) },
+      );
+      await router.invalidate();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Review impact gagal disimpan.");
     } finally {
       setBusy(false);
     }
@@ -187,6 +251,96 @@ function SettingsPage() {
                 <p>Semua versi tersimpan</p>
               </div>
             </div>
+            {impact ? (
+              <section className="policy-impact-review" aria-labelledby="policy-impact-title">
+                <header>
+                  <div>
+                    <h3 id="policy-impact-title">Review perubahan akses</h3>
+                    <p>
+                      {impact.pendingCount} dari {impact.analyzedCount} chunk perlu keputusan HR
+                      sebelum policy dapat diaktifkan.
+                    </p>
+                  </div>
+                  {impact.truncated ? (
+                    <span>Menampilkan 100 item pertama. Selesaikan lalu muat ulang.</span>
+                  ) : null}
+                </header>
+                {impact.items.length === 0 ? (
+                  <EmptyState
+                    title="Impact policy sudah terselesaikan"
+                    description="Policy siap diaktifkan setelah pemeriksaan terakhir."
+                  />
+                ) : (
+                  <div className="policy-impact-review__list">
+                    {impact.items.map((item) => (
+                      <article key={item.chunkId}>
+                        <header>
+                          <div>
+                            <code>{item.iomNumber}</code>
+                            <strong>{item.title}</strong>
+                          </div>
+                          <StatusStamp status={item.proposedVisibility} />
+                        </header>
+                        <p>{item.excerpt}</p>
+                        <div className="policy-impact-review__meta">
+                          <span>Akses saat ini: {item.currentVisibility.replaceAll("_", " ")}</span>
+                          <span>Confidence {Math.round(item.confidence * 100)}%</span>
+                          {item.page ? <span>Halaman {item.page}</span> : null}
+                          {item.conflictsWithMarker ? (
+                            <span>Konflik dengan marker manual</span>
+                          ) : null}
+                        </div>
+                        <p>
+                          <strong>Alasan AI:</strong> {item.rationale}
+                        </p>
+                        {item.hasDecision ? (
+                          <div className="policy-impact-review__form">
+                            <Field label="Akses final">
+                              <select
+                                value={impactChoices[item.chunkId] ?? ""}
+                                onChange={(event) =>
+                                  setImpactChoices((current) => ({
+                                    ...current,
+                                    [item.chunkId]: event.target.value as
+                                      | "EMPLOYEE_SAFE"
+                                      | "HR_ONLY",
+                                  }))
+                                }
+                              >
+                                <option value="">Pilih keputusan</option>
+                                <option value="EMPLOYEE_SAFE">Employee safe</option>
+                                <option value="HR_ONLY">HR only</option>
+                              </select>
+                            </Field>
+                            <Field label="Alasan keputusan HR">
+                              <Textarea
+                                rows={3}
+                                minLength={3}
+                                maxLength={2_000}
+                                value={impactReasons[item.chunkId] ?? ""}
+                                onChange={(event) =>
+                                  setImpactReasons((current) => ({
+                                    ...current,
+                                    [item.chunkId]: event.target.value,
+                                  }))
+                                }
+                              />
+                            </Field>
+                            <Button disabled={busy} onClick={() => void saveImpactDecision(item)}>
+                              Simpan keputusan impact
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="form-alert" role="status">
+                            Analisis chunk ini masih berjalan. Muat ulang setelah worker selesai.
+                          </div>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ) : null}
             {policies.length === 0 ? (
               <EmptyState title="Belum ada kebijakan" description="Buat kebijakan pertama" />
             ) : (
@@ -215,7 +369,13 @@ function SettingsPage() {
                       </Button>
                     ) : null}
                     {policy.status === "EVALUATING" ? (
-                      <Button disabled={busy} onClick={() => action(policy, "activate")}>
+                      <Button
+                        disabled={
+                          busy ||
+                          (policy.id === evaluatingPolicyId && (impact?.pendingCount ?? 0) > 0)
+                        }
+                        onClick={() => action(policy, "activate")}
+                      >
                         <Lightning /> Aktifkan atomik
                       </Button>
                     ) : null}

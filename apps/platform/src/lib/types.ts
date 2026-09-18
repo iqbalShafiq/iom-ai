@@ -56,6 +56,8 @@ export interface IomVersionRow {
       reviewedAt?: string | null;
       categories: string[];
       sensitiveSpans: Array<{ start: number; end: number; reason: string }>;
+      conflictsWithMarker?: boolean;
+      modelId?: string;
     }>;
   }>;
   annotations?: unknown[];

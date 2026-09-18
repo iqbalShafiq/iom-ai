@@ -8,8 +8,8 @@
 - Manual confidential marker tidak dapat diturunkan AI. Employee-safe marker hanya hint.
 - Generic logs dan Lens hanya menerima safe metadata.
 - Publish ditolak server bila metadata belum dikonfirmasi, policy tidak aktif, satu chunk belum
-  disetujui HR, overlap terbaru belum selesai, keputusan overlap masih manual/unset, atau relasi
-  lifecycle yang diwajibkan belum ada.
+  disetujui HR, coverage overlap belum lengkap, zero-match belum dikonfirmasi, keputusan overlap
+  masih pending/unset, evidence stale, atau relasi lifecycle yang diwajibkan belum ada.
 - Kandidat semantic overlap diotorisasi ulang ke PostgreSQL sebelum text-nya mencapai model.
 - Reindex menghapus vector dengan chunk ID versi yang sama dari kedua collection sebelum upsert,
   sehingga perubahan `EMPLOYEE_SAFE` menjadi `HR_ONLY` tidak meninggalkan vector employee lama.
@@ -20,7 +20,8 @@
 ## Dataset dan gates
 
 `packages/evals` menyimpan kasus versioned untuk direct/indirect disclosure, reconstruction,
-document prompt injection, temporal change, citation authorization, dan low-confidence overlap.
+document prompt injection, temporal change, citation authorization, scoped partial override, zero
+candidate confirmation, provenance invalid, dan low-confidence overlap.
 Evaluator yang tidak dapat mem-parse output dihitung gagal.
 
 Sebelum release, perlu dataset organisasi berlabel HR untuk mengukur:
@@ -32,6 +33,10 @@ Sebelum release, perlu dataset organisasi berlabel HR untuk mengukur:
 - overlap macro-F1 minimal 85%;
 - seluruh unresolved confidentiality block publish;
 - smoke test streaming/tools/reasoning/cancellation untuk setiap model allowlisted.
+
+Allowlist aktif hanya `gpt-5.6-luna` dengan reasoning `high`. Capability smoke test protected harus
+mencakup structured confidentiality, structured overlap dengan provenance valid, serta chat yang
+benar-benar memanggil retrieval; hasil stub atau mock tidak memenuhi release gate model-dependent.
 
 Model-dependent eval tidak dijalankan diam-diam di CI tanpa credential. Jalankan di protected
 environment, simpan score dan prompt/policy version sebagai artifact, dan blok release jika ada

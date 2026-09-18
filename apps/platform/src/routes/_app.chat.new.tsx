@@ -23,7 +23,7 @@ function createDraftConversation(
     title: "Percakapan baru",
     accessScope,
     modelId: model?.id ?? "gpt-5.6-luna",
-    reasoningEffort: model?.defaultReasoningEffort ?? "low",
+    reasoningEffort: model?.defaultReasoningEffort ?? "high",
     updatedAt: new Date().toISOString(),
   };
 }

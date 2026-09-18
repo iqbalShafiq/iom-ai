@@ -26,21 +26,22 @@ const serverSchema = z.object({
     .default("false")
     .transform((value) => value === "true"),
   ANVIA_LENS_URL: optionalUrl,
-  CLASSIFIER_MODEL_ID: z
-    .enum(["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"])
-    .default("gpt-5.6-sol"),
-  OVERLAP_MODEL_ID: z
-    .enum(["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"])
-    .default("gpt-5.6-sol"),
 });
 
 const browserSchema = z.object({ VITE_API_URL: z.url() });
 
-export type ServerConfig = z.infer<typeof serverSchema>;
+export type ServerConfig = z.infer<typeof serverSchema> & {
+  readonly CLASSIFIER_MODEL_ID: "gpt-5.6-luna";
+  readonly OVERLAP_MODEL_ID: "gpt-5.6-luna";
+};
 export type BrowserConfig = z.infer<typeof browserSchema>;
 
 export function parseServerConfig(environment: Record<string, string | undefined>): ServerConfig {
-  return serverSchema.parse(environment);
+  return {
+    ...serverSchema.parse(environment),
+    CLASSIFIER_MODEL_ID: "gpt-5.6-luna",
+    OVERLAP_MODEL_ID: "gpt-5.6-luna",
+  };
 }
 
 export function parseBrowserConfig(environment: Record<string, unknown>): BrowserConfig {

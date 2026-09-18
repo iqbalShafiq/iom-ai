@@ -31,6 +31,7 @@ export function createConfidentialityClassifier(model: IomOpenAIModel) {
     name: "IOM Confidentiality Classifier",
     model,
     maxTurns: 1,
+    retries: { maxAttempts: 2, initialDelayMs: 100, maxDelayMs: 500 },
     outputSchema: confidentialityDecisionSchema,
     controls: reasoning.controls,
     providerOptions: reasoning.providerOptions,
@@ -60,6 +61,18 @@ export async function classifyConfidentiality(options: {
   });
   if (outcome.type !== "response") throw new Error("CONFIDENTIALITY_CLASSIFICATION_INCOMPLETE");
   const decision = confidentialityDecisionSchema.parse(outcome.output);
+  const spansAreValid = decision.sensitiveSpans.every(
+    (span) => span.start >= 0 && span.end <= options.input.text.length && span.end > span.start,
+  );
+  if (!spansAreValid) {
+    return {
+      ...decision,
+      visibility: "NEEDS_REVIEW",
+      categories: [...new Set([...decision.categories, "INVALID_SENSITIVE_SPAN"])].slice(0, 12),
+      rationale: "Offset sensitive span dari model tidak valid dan perlu diverifikasi HR.",
+      sensitiveSpans: [],
+    };
+  }
   const hasHardMarker = options.input.manualMarkers.some(
     (marker) => marker.kind === "CONFIDENTIAL",
   );

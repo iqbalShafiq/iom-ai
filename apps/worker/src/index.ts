@@ -38,7 +38,34 @@ const knowledge = await createQdrantKnowledgeIndex({
   qdrantUrl: config.QDRANT_URL,
   ...(config.QDRANT_API_KEY ? { qdrantApiKey: config.QDRANT_API_KEY } : {}),
   cacheDir: config.MODEL_CACHE_ROOT,
-  authorizer: { authorize: async (evidence) => [...evidence] },
+  authorizer: {
+    authorize: async (evidence, input, scope) => {
+      const ids = [...new Set(evidence.map((item) => item.chunkId))];
+      if (ids.length === 0) return [];
+      const asOf = input.asOf ? new Date(`${input.asOf}T23:59:59.999Z`) : new Date();
+      const chunks = await database.iomChunk.findMany({
+        where: {
+          id: { in: ids },
+          visibility: {
+            in: scope.accessScope === "EMPLOYEE" ? ["EMPLOYEE_SAFE"] : ["EMPLOYEE_SAFE", "HR_ONLY"],
+          },
+          vectorGeneration: scope.policyVersion,
+          version: {
+            status: input.includeHistory ? { in: ["PUBLISHED", "SUPERSEDED"] } : "PUBLISHED",
+            ...(scope.actorId === "worker"
+              ? {}
+              : {
+                  effectiveFrom: { lte: asOf },
+                  OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: asOf } }],
+                }),
+          },
+        },
+        select: { id: true },
+      });
+      const authorized = new Set(chunks.map((chunk) => chunk.id));
+      return evidence.filter((item) => authorized.has(item.chunkId));
+    },
+  },
 });
 await knowledge.index.ensure();
 

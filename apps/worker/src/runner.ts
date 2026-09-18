@@ -116,7 +116,9 @@ export class WorkerRunner {
     const jobs = await this.#options.database.backgroundJob.findMany({
       where: {
         status: "DEAD_LETTER",
-        type: { in: ["INGEST_DOCUMENT", "INDEX_VERSION", "ANALYZE_OVERLAP"] },
+        type: {
+          in: ["INGEST_DOCUMENT", "INDEX_VERSION", "ANALYZE_OVERLAP", "EVALUATE_POLICY"],
+        },
       },
       select: { type: true, payload: true, lastErrorCode: true },
     });
@@ -168,6 +170,12 @@ export class WorkerRunner {
       await this.#options.database.overlapRun.updateMany({
         where: { id: payload.runId, status: { not: "COMPLETED" } },
         data: { status: "FAILED", errorCode },
+      });
+    }
+    if (jobType === "EVALUATE_POLICY" && typeof payload.policyId === "string") {
+      await this.#options.database.confidentialityPolicy.updateMany({
+        where: { id: payload.policyId, status: "EVALUATING" },
+        data: { status: "DRAFT" },
       });
     }
   }

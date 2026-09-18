@@ -17,8 +17,8 @@ const config = {
   WORKER_AI_TIMEOUT_MS: 120_000,
   OCR_LANGUAGES: "ind+eng",
   ANVIA_LENS_ENABLED: false,
-  CLASSIFIER_MODEL_ID: "gpt-5.6-sol",
-  OVERLAP_MODEL_ID: "gpt-5.6-sol",
+  CLASSIFIER_MODEL_ID: "gpt-5.6-luna",
+  OVERLAP_MODEL_ID: "gpt-5.6-luna",
 } as const;
 
 describe("API boundary", () => {
@@ -37,5 +37,17 @@ describe("API boundary", () => {
       body: JSON.stringify({ email: "a@example.com", password: "password123" }),
     });
     expect(response.status).toBe(403);
+  });
+
+  it("allows the overlap PUT workflow through the configured CORS boundary", async () => {
+    const app = createApp({} as never, config);
+    const response = await app.request("/overlap/matches/example/decision", {
+      method: "OPTIONS",
+      headers: {
+        origin: config.PLATFORM_ORIGIN,
+        "access-control-request-method": "PUT",
+      },
+    });
+    expect(response.headers.get("access-control-allow-methods")).toContain("PUT");
   });
 });

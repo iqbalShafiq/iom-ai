@@ -2767,6 +2767,46 @@ time,
   font-size: 0.8rem;
   opacity: 0.72;
 }
+.overlap-evidence-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 0.9rem;
+  border-top: 1.5px solid var(--ink);
+  padding-top: 0.85rem;
+}
+.overlap-evidence-card > div {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+}
+.overlap-evidence-card strong {
+  font:
+    750 0.66rem "JetBrains Mono Variable",
+    monospace;
+  text-transform: uppercase;
+}
+.overlap-evidence-card p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.overlap-evidence-card a {
+  width: fit-content;
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+.overlap-evidence-card > p {
+  grid-column: 1 / -1;
+  border-left: 3px solid var(--orange);
+  padding-left: 0.65rem;
+}
 .overlap-rule-list {
   display: grid;
   gap: 1rem;
@@ -2888,6 +2928,58 @@ time,
   align-items: center;
   flex-wrap: wrap;
   gap: 0.6rem;
+}
+.overlap-decision__form {
+  display: grid;
+  gap: 0.75rem;
+  border-top: 1.5px solid var(--ink);
+  padding-top: 0.85rem;
+}
+.overlap-decision__form > label,
+.overlap-decision__form > div {
+  display: grid;
+  gap: 0.35rem;
+}
+.overlap-decision__form label,
+.overlap-decision__form > div > span {
+  color: var(--ink);
+  font:
+    750 0.68rem "JetBrains Mono Variable",
+    monospace;
+  text-transform: uppercase;
+}
+.overlap-decision__form select,
+.overlap-decision__form input,
+.overlap-decision__form textarea {
+  width: 100%;
+  border: var(--line);
+  border-radius: 2px;
+  background: var(--paper-light);
+  color: var(--ink);
+  padding: 0.65rem 0.7rem;
+  font: inherit;
+}
+.overlap-decision__form textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+.overlap-decision__form > div > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+.overlap-decision__form > div > div > button {
+  min-height: 2.25rem;
+  border: var(--line);
+  background: transparent;
+  color: var(--ink);
+  padding: 0.45rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.overlap-decision__form > div > div > button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper-light);
 }
 .overlap-decision__actions {
   display: flex;
@@ -3091,6 +3183,82 @@ time,
   display: flex;
   gap: 1rem;
   color: var(--muted);
+}
+
+.policy-impact-review {
+  display: grid;
+  gap: 1rem;
+  margin-block: 1.5rem;
+  padding-block: 1.25rem;
+  border-block: 2px solid var(--ink);
+}
+
+.policy-impact-review > header,
+.policy-impact-review__list > article > header,
+.policy-impact-review__meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.policy-impact-review > header p,
+.policy-impact-review__list > article p {
+  margin: 0.35rem 0 0;
+}
+
+.policy-impact-review__list {
+  display: grid;
+  gap: 1rem;
+}
+
+.policy-impact-review__list > article {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 2px solid var(--ink);
+  background: var(--paper-light);
+}
+
+.policy-impact-review__list > article > header > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.policy-impact-review__meta {
+  justify-content: flex-start;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.policy-impact-review__form {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.6fr) minmax(16rem, 1.4fr) auto;
+  gap: 1rem;
+  align-items: end;
+}
+
+.policy-impact-review__form select {
+  min-height: 44px;
+  width: 100%;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper-light);
+  color: var(--ink);
+  padding-inline: 0.75rem;
+  font: inherit;
+}
+
+.policy-impact-review__form select:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+}
+
+@media (max-width: 768px) {
+  .policy-impact-review__form {
+    grid-template-columns: 1fr;
+  }
 }
 .audit-timeline {
   list-style: none;
@@ -3972,6 +4140,12 @@ time,
   }
   .overlap-rule-list dl {
     grid-template-columns: 1fr;
+  }
+  .overlap-evidence-card {
+    grid-template-columns: 1fr;
+  }
+  .overlap-evidence-card > p {
+    grid-column: auto;
   }
   .overlap-decision__actions {
     justify-content: flex-start;

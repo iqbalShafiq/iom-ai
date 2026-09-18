@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
+  // The mocked API tests share one Vite dev server; serial workers keep route setup isolated on Windows.
+  workers: 1,
   use: { baseURL: "http://localhost:5173", trace: "retain-on-failure" },
   webServer: {
     command: "pnpm dev --host 127.0.0.1",

@@ -1,4 +1,4 @@
-import { type EmbeddingModel, embedDocuments } from "@anvia/core/embeddings";
+import { type EmbeddingModel, embedDocuments, embedTexts } from "@anvia/core/embeddings";
 import { retrieveDocuments, type VectorStore } from "@anvia/core/vector-store";
 import { QdrantVectorClient } from "@anvia/qdrant";
 import { loadTransformersEmbeddingModel } from "@anvia/transformers";
@@ -21,6 +21,7 @@ export interface RetrievalService {
     input: SearchIomInput,
     scope: RetrievalScope,
     signal?: AbortSignal,
+    options?: { maxResults?: number; topK?: number },
   ): Promise<SearchIomOutput>;
 }
 
@@ -69,6 +70,13 @@ function splitPageForEmbedding(text: string): string[] {
   return windows.filter(Boolean);
 }
 
+function withoutRelationNotes(evidence: IomEvidence): IomEvidence {
+  return {
+    ...evidence,
+    relationContext: evidence.relationContext.map(({ note: _note, ...relation }) => relation),
+  };
+}
+
 export function createPageEmbeddingTexts(evidence: IomEvidence): string[] {
   const header = [
     `IOM ${evidence.iomNumber.slice(0, 40)}`,
@@ -101,7 +109,9 @@ export class RoleScopedKnowledgeIndex implements RetrievalService {
   }
 
   async index(evidence: IomEvidence[], policyVersion: number, signal?: AbortSignal): Promise<void> {
-    const employee = evidence.filter((item) => item.visibility === "EMPLOYEE_SAFE");
+    const employee = evidence
+      .filter((item) => item.visibility === "EMPLOYEE_SAFE")
+      .map(withoutRelationNotes);
     const embeddedEmployee = await embedDocuments({
       model: this.#model,
       documents: employee,
@@ -143,6 +153,7 @@ export class RoleScopedKnowledgeIndex implements RetrievalService {
     input: SearchIomInput,
     scope: RetrievalScope,
     signal?: AbortSignal,
+    options?: { maxResults?: number; topK?: number },
   ): Promise<SearchIomOutput> {
     const store = scope.accessScope === "EMPLOYEE" ? this.#employeeStore : this.#hrStore;
     const candidates = await retrieveDocuments({
@@ -151,7 +162,7 @@ export class RoleScopedKnowledgeIndex implements RetrievalService {
       query: input.query,
       // A logical page can own several window vectors. Ask Qdrant for extra points so vectors
       // from one dense page do not crowd out other relevant pages before document-level dedupe.
-      topK: 30,
+      topK: options?.topK ?? 30,
       minScore: 0.35,
       abortSignal: signal,
     });
@@ -162,10 +173,54 @@ export class RoleScopedKnowledgeIndex implements RetrievalService {
     );
     const asOf = input.asOf ? new Date(`${input.asOf}T23:59:59.999Z`) : new Date();
     return {
-      evidence: authorized.slice(0, 5),
+      evidence: authorized.slice(0, options?.maxResults ?? 5),
       temporalScope: { asOf: asOf.toISOString(), includesHistory: input.includeHistory },
       insufficientEvidence: authorized.length === 0,
     };
+  }
+
+  async searchProbes(
+    queries: readonly string[],
+    scope: RetrievalScope,
+    signal?: AbortSignal,
+  ): Promise<SearchIomOutput[]> {
+    if (queries.length === 0) return [];
+    const store = scope.accessScope === "EMPLOYEE" ? this.#employeeStore : this.#hrStore;
+    const outputs: SearchIomOutput[] = [];
+    for (let offset = 0; offset < queries.length; offset += 4) {
+      const batch = queries.slice(offset, offset + 4);
+      const embedded = await embedTexts({
+        model: this.#model,
+        texts: [...batch],
+        concurrency: 4,
+        abortSignal: signal,
+      });
+      const batchResults = await Promise.all(
+        embedded.embeddings.map(async (embedding, index) => {
+          const query = batch[index] ?? "";
+          const candidates = await store.search({
+            vector: embedding.vector,
+            topK: 10,
+            minScore: 0.35,
+            abortSignal: signal,
+          });
+          const input: SearchIomInput = { query, includeHistory: true };
+          const authorized = await this.#authorizer.authorize(
+            candidates.map((candidate) => ({ ...candidate.document, score: candidate.score })),
+            input,
+            scope,
+          );
+          const asOf = new Date();
+          return {
+            evidence: authorized,
+            temporalScope: { asOf: asOf.toISOString(), includesHistory: true },
+            insufficientEvidence: authorized.length === 0,
+          } satisfies SearchIomOutput;
+        }),
+      );
+      outputs.push(...batchResults);
+    }
+    return outputs;
   }
 }
 

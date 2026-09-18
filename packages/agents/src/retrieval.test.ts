@@ -109,4 +109,31 @@ describe("RoleScopedKnowledgeIndex", () => {
     expect(employee.upserted).toEqual([["page-1"]]);
     expect(embeddedTexts).toEqual([...pageWindows, ...pageWindows]);
   });
+
+  it("embeds overlap probes in bounded batches and searches the HR store", async () => {
+    const hr = fakeStore();
+    const embeddedBatches: string[][] = [];
+    const probeModel: EmbeddingModel = {
+      ...model,
+      embedTexts: async (texts) => {
+        embeddedBatches.push([...texts]);
+        return texts.map((document) => ({ document, vector: [1, 0] }));
+      },
+    };
+    const index = new RoleScopedKnowledgeIndex({
+      model: probeModel,
+      employeeStore: fakeStore().store,
+      hrStore: hr.store,
+      authorizer: { authorize: async (items) => [...items] },
+    });
+
+    const results = await index.searchProbes(["probe-1", "probe-2", "probe-3"], {
+      actorId: "worker",
+      accessScope: "HR",
+      policyVersion: 2,
+    });
+
+    expect(embeddedBatches).toEqual([["probe-1", "probe-2", "probe-3"]]);
+    expect(results).toHaveLength(3);
+  });
 });

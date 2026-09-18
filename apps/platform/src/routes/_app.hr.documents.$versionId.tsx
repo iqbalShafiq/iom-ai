@@ -26,11 +26,15 @@ import {
   Warning,
 } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { apiFetch, apiUrl } from "@/lib/api";
 import type { IomVersionRow } from "@/lib/types";
 
 export const Route = createFileRoute("/_app/hr/documents/$versionId")({
+  validateSearch: (search) => {
+    const page = Number(search.page);
+    return Number.isInteger(page) && page > 0 ? { page } : {};
+  },
   loader: async ({ params }) => {
     const [detail, list] = await Promise.all([
       apiFetch<{ version: IomVersionRow }>(`/iom/${params.versionId}`),
@@ -203,6 +207,7 @@ function MarkedText({
 
 type ReviewWorkspaceProps = {
   version: IomVersionRow;
+  focusPage?: number;
   unresolved: IomChunk[];
   hasUnreviewedDecisions: boolean;
   choices: Record<string, ReviewChoice>;
@@ -215,6 +220,7 @@ type ReviewWorkspaceProps = {
 
 function ReviewWorkspace({
   version,
+  focusPage,
   unresolved,
   hasUnreviewedDecisions,
   choices,
@@ -224,6 +230,21 @@ function ReviewWorkspace({
   onSelectChoice,
   onChangeNote,
 }: ReviewWorkspaceProps) {
+  const focusedChunk = focusPage
+    ? version.chunks?.find((chunk) => chunk.pageStart === focusPage)
+    : undefined;
+  useEffect(() => {
+    if (!focusedChunk || !focusPage) return;
+    const element = document.querySelector<HTMLElement>(
+      `[data-document-page="${focusedChunk.pageStart}"]`,
+    );
+    const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ? "auto"
+      : "smooth";
+    element?.scrollIntoView({ block: "start", behavior });
+    element?.focus({ preventScroll: true });
+  }, [focusedChunk, focusPage]);
+
   return (
     <div className="review-split">
       <section className="document-preview" aria-label="Preview dokumen">
@@ -245,6 +266,12 @@ function ReviewWorkspace({
           </div>
         </header>
         <div className="review-panel__body">
+          {focusPage && !focusedChunk ? (
+            <div className="form-alert" role="status">
+              Halaman sumber {focusPage} tidak tersedia pada versi dokumen ini. Menampilkan review
+              dokumen secara umum.
+            </div>
+          ) : null}
           {version.status === "IN_REVIEW" && unresolved.length === 0 && hasUnreviewedDecisions ? (
             <div className="ai-rationale">
               <strong>Persetujuan HR diperlukan</strong>
@@ -268,6 +295,8 @@ function ReviewWorkspace({
               <article
                 key={chunk.id}
                 className="chunk-review"
+                data-document-page={chunk.pageStart ?? undefined}
+                tabIndex={-1}
                 data-state={chunk.visibility.toLowerCase()}
               >
                 <header>
@@ -279,7 +308,9 @@ function ReviewWorkspace({
                 </header>
                 <MarkedText text={chunk.text} spans={decision?.sensitiveSpans ?? []} />
                 <div className="ai-rationale">
-                  <strong>Alasan AI</strong>
+                  <strong>
+                    {decision?.modelId === "human-review" ? "Alasan keputusan HR" : "Alasan AI"}
+                  </strong>
                   <p>{decision?.rationale ?? "Klasifikasi belum tersedia."}</p>
                   <span>Confidence {Math.round((chunk.classificationConfidence ?? 0) * 100)}%</span>
                 </div>
@@ -320,6 +351,7 @@ function ReviewWorkspace({
 
 function DocumentDetail() {
   const { version, versions } = Route.useLoaderData();
+  const { page: focusPage } = Route.useSearch();
   const router = useRouter();
   const [choices, setChoices] = useState<Record<string, ReviewChoice>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -512,6 +544,7 @@ function DocumentDetail() {
         {activeTab === "review" ? (
           <ReviewWorkspace
             version={version}
+            {...(focusPage !== undefined ? { focusPage } : {})}
             unresolved={unresolved}
             hasUnreviewedDecisions={hasUnreviewedDecisions}
             choices={choices}

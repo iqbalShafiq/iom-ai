@@ -85,6 +85,7 @@ export const relationSummarySchema = z.object({
   relatedVersionId: z.string().uuid(),
   relatedIomNumber: z.string(),
   effectiveFrom: z.iso.datetime().optional(),
+  topicScope: z.array(z.string().trim().min(1).max(100)).default([]),
   note: z.string().optional(),
 });
 
@@ -154,34 +155,148 @@ export const confidentialityPolicySchema = z.object({
 export type ConfidentialityPolicy = z.infer<typeof confidentialityPolicySchema>;
 
 export const overlapRecommendationSchema = z.enum([
-  "ARCHIVE_EXISTING",
-  "PUBLISH_AS_COMPLEMENT",
+  "REPLACES",
+  "PARTIALLY_OVERRIDES",
+  "COMPLEMENTS",
   "NO_MATERIAL_OVERLAP",
   "MANUAL_REVIEW",
 ]);
+export type OverlapRecommendation = z.infer<typeof overlapRecommendationSchema>;
 
-export const overlapMatchSchema = z.object({
-  existingVersionId: z.string().uuid(),
-  recommendation: overlapRecommendationSchema,
-  confidence: z.number().min(0).max(1),
-  sharedTopics: z.array(z.string()).max(20),
-  changedRules: z.array(
-    z.object({
-      subject: z.string(),
-      previousValue: z.string().nullable(),
-      proposedValue: z.string().nullable(),
-      effectiveFrom: z.iso.date().nullable(),
-    }),
-  ),
-  conflicts: z.array(z.string()).max(20),
-  evidence: z.array(
-    z.object({
-      candidateChunkId: z.string().uuid(),
-      existingChunkId: z.string().uuid(),
-      explanation: z.string(),
-    }),
-  ),
+export const overlapDecisionStatusSchema = z.enum(["PENDING_REVIEW", "FINAL"]);
+export type OverlapDecisionStatus = z.infer<typeof overlapDecisionStatusSchema>;
+
+export const overlapDecisionOutcomeSchema = z.enum([
+  "REPLACES",
+  "PARTIALLY_OVERRIDES",
+  "COMPLEMENTS",
+  "NO_MATERIAL_OVERLAP",
+]);
+export type OverlapDecisionOutcome = z.infer<typeof overlapDecisionOutcomeSchema>;
+
+const normalizedTopicScopeSchema = z
+  .array(z.string().trim().min(1).max(100))
+  .max(20)
+  .transform((topics) => {
+    const seen = new Set<string>();
+    return topics.filter((topic) => {
+      const key = topic.toLocaleLowerCase("id-ID");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  });
+
+export const pendingOverlapDecisionSchema = z.object({
+  status: z.literal("PENDING_REVIEW"),
+  rationale: z.string().trim().min(3).max(2_000),
 });
+
+export const finalOverlapDecisionSchema = z
+  .object({
+    status: z.literal("FINAL"),
+    outcome: overlapDecisionOutcomeSchema,
+    rationale: z.string().trim().max(2_000).optional(),
+    topicScope: normalizedTopicScopeSchema.optional(),
+  })
+  .superRefine((value, context) => {
+    const requiresRationale =
+      value.outcome === "REPLACES" || value.outcome === "PARTIALLY_OVERRIDES";
+    if (requiresRationale && (!value.rationale || value.rationale.trim().length < 3)) {
+      context.addIssue({
+        code: "custom",
+        path: ["rationale"],
+        message: "Rationale wajib diisi untuk keputusan ini.",
+      });
+    }
+
+    if (value.outcome === "PARTIALLY_OVERRIDES") {
+      if (!value.topicScope || value.topicScope.length === 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["topicScope"],
+          message: "Topic scope wajib diisi untuk partial override.",
+        });
+      }
+    } else if (value.topicScope !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["topicScope"],
+        message: "Topic scope hanya boleh digunakan untuk partial override.",
+      });
+    }
+  });
+
+export const overlapDecisionPayloadSchema = z.discriminatedUnion("status", [
+  pendingOverlapDecisionSchema,
+  finalOverlapDecisionSchema,
+]);
+export type OverlapDecisionPayload = z.infer<typeof overlapDecisionPayloadSchema>;
+
+export const overlapMatchSchema = z
+  .object({
+    existingVersionId: z.string().uuid(),
+    recommendation: overlapRecommendationSchema,
+    confidence: z.number().min(0).max(1),
+    sharedTopics: z.array(z.string()).max(20),
+    changedRules: z.array(
+      z.object({
+        subject: z.string(),
+        previousValue: z.string().nullable(),
+        proposedValue: z.string().nullable(),
+        effectiveFrom: z.iso.date().nullable(),
+      }),
+    ),
+    hasConflict: z.boolean(),
+    conflicts: z.array(z.string()).max(20),
+    evidence: z.array(
+      z.object({
+        candidateChunkId: z.string().uuid(),
+        existingChunkId: z.string().uuid(),
+        explanation: z.string(),
+      }),
+    ),
+  })
+  .superRefine((value, context) => {
+    if (value.hasConflict && value.conflicts.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["conflicts"],
+        message: "Conflict harus memiliki alasan.",
+      });
+    }
+    if (!value.hasConflict && value.conflicts.length > 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["conflicts"],
+        message: "Conflict list harus kosong bila hasConflict false.",
+      });
+    }
+    if (
+      ["REPLACES", "PARTIALLY_OVERRIDES", "COMPLEMENTS"].includes(value.recommendation) &&
+      value.evidence.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["evidence"],
+        message: "Rekomendasi material wajib memiliki evidence.",
+      });
+    }
+    if (value.recommendation === "PARTIALLY_OVERRIDES" && value.sharedTopics.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["sharedTopics"],
+        message: "Partial override wajib memiliki shared topic.",
+      });
+    }
+    if (value.recommendation === "MANUAL_REVIEW" && value.conflicts.length === 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["conflicts"],
+        message: "Manual review harus memiliki alasan yang dapat ditinjau HR.",
+      });
+    }
+  });
 export type OverlapMatch = z.infer<typeof overlapMatchSchema>;
 
 export const createUploadBatchSchema = z.object({

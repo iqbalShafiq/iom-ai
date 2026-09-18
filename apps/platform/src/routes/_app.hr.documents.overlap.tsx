@@ -25,23 +25,49 @@ interface OverlapMatchRow {
     effectiveFrom: string | null;
   }>;
   conflicts: string[];
+  hasConflict: boolean;
+  evidenceStatus: "CURRENT" | "STALE" | "MISSING";
+  evidence: Array<{
+    explanation: string;
+    candidate: {
+      versionId: string;
+      iomNumber: string;
+      title: string;
+      page?: number;
+      section?: string;
+      excerpt: string;
+    };
+    existing: {
+      versionId: string;
+      iomNumber: string;
+      title: string;
+      page?: number;
+      section?: string;
+      excerpt: string;
+    };
+  }>;
   existingVersion: IomVersionRow;
-  decision?: { decision: string } | null;
+  decision?: {
+    status: "PENDING_REVIEW" | "FINAL";
+    outcome?: string;
+    rationale?: string;
+    topicScope: string[];
+    decidedByName: string;
+    updatedAt: string;
+  } | null;
 }
 
 interface OverlapRun {
   id: string;
   status: string;
   createdAt: string;
+  completedAt?: string;
+  coverageComplete: boolean;
+  safeErrorCode?: string;
+  metrics: { analyzedCandidateCount: number; queryWindowCount: number };
+  noMatchConfirmation: { confirmedAt: string; confirmedByName: string; note?: string } | null;
   candidateVersion: IomVersionRow;
   matches: OverlapMatchRow[];
-}
-
-interface PendingDecision {
-  matchId: string;
-  decision: string;
-  candidateTitle: string;
-  existingTitle: string;
 }
 
 interface DecisionPresentation {
@@ -51,15 +77,20 @@ interface DecisionPresentation {
 }
 
 const DECISION_PRESENTATIONS: Record<string, DecisionPresentation> = {
-  ARCHIVE_EXISTING: {
-    label: "Ganti aturan lama",
-    confirmLabel: "Konfirmasi penggantian",
-    description: "Draft akan dicatat sebagai pengganti dokumen existing.",
+  REPLACES: {
+    label: "Menggantikan seluruh aturan lama",
+    confirmLabel: "Simpan keputusan menggantikan",
+    description: "Dokumen lama akan menjadi superseded saat draft dipublish.",
   },
-  PUBLISH_AS_COMPLEMENT: {
-    label: "Jadikan pelengkap",
-    confirmLabel: "Konfirmasi sebagai pelengkap",
-    description: "Draft akan dicatat sebagai pelengkap dokumen existing.",
+  PARTIALLY_OVERRIDES: {
+    label: "Mengubah sebagian aturan",
+    confirmLabel: "Simpan partial override",
+    description: "Dokumen lama tetap berlaku di luar topic scope yang dipilih.",
+  },
+  COMPLEMENTS: {
+    label: "Melengkapi",
+    confirmLabel: "Simpan sebagai pelengkap",
+    description: "Kedua dokumen tetap berlaku dan saling melengkapi.",
   },
   NO_MATERIAL_OVERLAP: {
     label: "Tidak ada tumpang tindih",
@@ -67,9 +98,9 @@ const DECISION_PRESENTATIONS: Record<string, DecisionPresentation> = {
     description: "Dokumen tidak memiliki aturan yang saling tumpang tindih.",
   },
   MANUAL_REVIEW: {
-    label: "Perlu review manual",
-    confirmLabel: "Catat review manual",
-    description: "Dokumen akan tetap diblokir untuk pemeriksaan HR lebih lanjut.",
+    label: "Perlu diselesaikan HR",
+    confirmLabel: "Tandai perlu review lanjutan",
+    description: "Publish tetap diblokir sampai HR memilih outcome final.",
   },
 };
 
@@ -79,6 +110,16 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   QUEUED: "Menunggu",
   RUNNING: "Diproses",
 };
+
+type DecisionPayload =
+  | { status: "PENDING_REVIEW"; rationale: string }
+  | {
+      status: "FINAL";
+      outcome: "REPLACES" | "PARTIALLY_OVERRIDES" | "COMPLEMENTS" | "NO_MATERIAL_OVERLAP";
+      rationale?: string;
+      topicScope?: string[];
+    };
+type FinalOutcome = "REPLACES" | "PARTIALLY_OVERRIDES" | "COMPLEMENTS" | "NO_MATERIAL_OVERLAP";
 
 function humanize(value: string) {
   return value
@@ -140,14 +181,19 @@ function OverlapPage() {
   const [selectedRunId, setSelectedRunId] = useState(runs[0]?.id ?? "");
   const [selectedMatchId, setSelectedMatchId] = useState("");
   const [busy, setBusy] = useState(false);
-  const [pendingDecision, setPendingDecision] = useState<PendingDecision | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingDecision, setPendingDecision] = useState<{
+    matchId: string;
+    payload: DecisionPayload;
+  } | null>(null);
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0];
   const selectedMatch =
     selectedRun?.matches.find((match) => match.id === selectedMatchId) ??
-    selectedRun?.matches.find((match) => !match.decision) ??
+    selectedRun?.matches.find((match) => match.decision?.status !== "FINAL") ??
     selectedRun?.matches[0];
   const pendingDecisionCount = runs.reduce(
-    (total, run) => total + run.matches.filter((match) => !match.decision).length,
+    (total, run) =>
+      total + run.matches.filter((match) => match.decision?.status !== "FINAL").length,
     0,
   );
   const activeRunCount = runs.filter(
@@ -162,44 +208,61 @@ function OverlapPage() {
 
   async function run(candidateVersionId: string) {
     setBusy(true);
+    setActionError(null);
     try {
       await apiFetch("/overlap/runs", {
         method: "POST",
         body: JSON.stringify({ candidateVersionId }),
       });
       await router.invalidate();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Analisis overlap gagal dijalankan.");
     } finally {
       setBusy(false);
     }
   }
 
-  async function recordDecision(matchId: string, decision: string) {
+  async function recordDecision(matchId: string, payload: DecisionPayload): Promise<boolean> {
     setBusy(true);
+    setActionError(null);
     try {
       await apiFetch(`/overlap/matches/${matchId}/decision`, {
-        method: "POST",
-        body: JSON.stringify({ decision }),
+        method: "PUT",
+        body: JSON.stringify(payload),
       });
-      setPendingDecision(null);
       await router.invalidate();
+      return true;
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Keputusan overlap gagal disimpan.");
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-  function requestDecision(match: OverlapMatchRow, decision: string) {
-    if (!selectedRun) return;
-    setPendingDecision({
-      matchId: match.id,
-      decision,
-      candidateTitle: selectedRun.candidateVersion.title,
-      existingTitle: match.existingVersion.title,
-    });
+  async function confirmDecision() {
+    if (!pendingDecision) return;
+    const confirmed = await recordDecision(pendingDecision.matchId, pendingDecision.payload);
+    if (confirmed) setPendingDecision(null);
   }
 
-  const confirmation = pendingDecision
-    ? decisionPresentation(pendingDecision.decision)
-    : decisionPresentation("MANUAL_REVIEW");
+  async function confirmNoMatch(runId: string) {
+    setBusy(true);
+    setActionError(null);
+    try {
+      await apiFetch(`/overlap/runs/${runId}/no-match-confirmation`, {
+        method: "PUT",
+        body: JSON.stringify({}),
+      });
+      await router.invalidate();
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Konfirmasi zero-match gagal disimpan.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="page-stack overlap-page">
@@ -218,6 +281,11 @@ function OverlapPage() {
           </div>
         }
       />
+      {actionError ? (
+        <p role="alert" className="overlap-inline-note">
+          {actionError}
+        </p>
+      ) : null}
 
       {runs.length === 0 ? (
         <div className="overlap-empty-layout">
@@ -262,7 +330,9 @@ function OverlapPage() {
             </header>
             <div className="overlap-run-list">
               {runs.map((runItem) => {
-                const pendingCount = runItem.matches.filter((match) => !match.decision).length;
+                const pendingCount = runItem.matches.filter(
+                  (match) => match.decision?.status !== "FINAL",
+                ).length;
                 const active = runItem.id === selectedRun?.id;
                 return (
                   <button
@@ -329,7 +399,12 @@ function OverlapPage() {
                     <small>perbandingan</small>
                   </span>
                   <span>
-                    <strong>{selectedRun.matches.filter((match) => !match.decision).length}</strong>
+                    <strong>
+                      {
+                        selectedRun.matches.filter((match) => match.decision?.status !== "FINAL")
+                          .length
+                      }
+                    </strong>
                     <small>belum diputuskan</small>
                   </span>
                   <time dateTime={selectedRun.createdAt}>
@@ -369,10 +444,31 @@ function OverlapPage() {
                   </div>
                 </div>
               ) : selectedRun.matches.length === 0 ? (
-                <EmptyState
-                  title="Tidak ditemukan tumpang tindih"
-                  description="Sistem tidak menemukan dokumen existing yang perlu dibandingkan."
-                />
+                <section className="overlap-no-overlap" aria-labelledby="zero-match-title">
+                  <span className="section-index">COVERAGE ANALISIS</span>
+                  <h3 id="zero-match-title">Tidak ditemukan kandidat overlap</h3>
+                  <p>
+                    {selectedRun.metrics.queryWindowCount} probe halaman sudah diperiksa dan
+                    {selectedRun.coverageComplete
+                      ? " coverage lengkap."
+                      : " coverage belum lengkap."}
+                  </p>
+                  {selectedRun.noMatchConfirmation ? (
+                    <p>
+                      Sudah dikonfirmasi oleh {selectedRun.noMatchConfirmation.confirmedByName}.
+                    </p>
+                  ) : selectedRun.coverageComplete ? (
+                    <Button
+                      disabled={busy}
+                      type="button"
+                      onClick={() => void confirmNoMatch(selectedRun.id)}
+                    >
+                      <Check weight="bold" /> Konfirmasi tidak ada overlap
+                    </Button>
+                  ) : (
+                    <p>Konfirmasi belum tersedia karena coverage belum lengkap.</p>
+                  )}
+                </section>
               ) : (
                 <>
                   {selectedRun.matches.length > 1 && selectedMatch ? (
@@ -385,17 +481,20 @@ function OverlapPage() {
                       items={selectedRun.matches.map((match, index) => ({
                         value: match.id,
                         label: `Perbandingan ${index + 1}`,
-                        ...(!match.decision ? { count: 1 } : {}),
+                        ...(match.decision?.status !== "FINAL" ? { count: 1 } : {}),
                       }))}
                     />
                   ) : null}
 
                   {selectedMatch ? (
                     <OverlapComparison
+                      key={selectedMatch.id}
                       run={selectedRun}
                       match={selectedMatch}
                       busy={busy}
-                      onDecision={(decision) => requestDecision(selectedMatch, decision)}
+                      onDecision={(payload) =>
+                        setPendingDecision({ matchId: selectedMatch.id, payload })
+                      }
                     />
                   ) : null}
                 </>
@@ -404,29 +503,22 @@ function OverlapPage() {
           ) : null}
         </div>
       )}
-
       <ConfirmDialog
         open={pendingDecision !== null}
-        title={confirmation.label}
+        title="Simpan keputusan HR?"
         description={
-          pendingDecision ? (
-            <>
-              {confirmation.description} Keputusan untuk{" "}
-              <strong>{pendingDecision.candidateTitle}</strong> terhadap{" "}
-              <strong>{pendingDecision.existingTitle}</strong> akan masuk ke audit log. Perubahan
-              lifecycle tetap menunggu konfirmasi publish.
-            </>
-          ) : (
-            confirmation.description
-          )
+          pendingDecision?.payload.status === "PENDING_REVIEW"
+            ? "Perbandingan ini tetap memblokir publish sampai HR menetapkan outcome final."
+            : pendingDecision
+              ? decisionPresentation(pendingDecision.payload.outcome).description
+              : ""
         }
-        confirmLabel={confirmation.confirmLabel}
+        confirmLabel="Ya, simpan keputusan"
         busy={busy}
-        onCancel={() => setPendingDecision(null)}
-        onConfirm={() => {
-          if (pendingDecision)
-            void recordDecision(pendingDecision.matchId, pendingDecision.decision);
+        onCancel={() => {
+          if (!busy) setPendingDecision(null);
         }}
+        onConfirm={() => void confirmDecision()}
       />
     </div>
   );
@@ -441,12 +533,37 @@ function OverlapComparison({
   run: OverlapRun;
   match: OverlapMatchRow;
   busy: boolean;
-  onDecision(decision: string): void;
+  onDecision(payload: DecisionPayload): void;
 }) {
   const recommendation = decisionPresentation(match.recommendation);
   const confidence = Math.round(match.confidence * 100);
-  const decided = match.decision ? decisionPresentation(match.decision.decision) : null;
+  const decided = match.decision?.outcome
+    ? decisionPresentation(match.decision.outcome)
+    : match.decision?.status === "PENDING_REVIEW"
+      ? decisionPresentation("MANUAL_REVIEW")
+      : null;
   const hasOverlapEvidence = match.recommendation !== "NO_MATERIAL_OVERLAP";
+  const savedOutcome = match.decision?.outcome;
+  const initialOutcome: FinalOutcome | "" = [
+    "REPLACES",
+    "PARTIALLY_OVERRIDES",
+    "COMPLEMENTS",
+    "NO_MATERIAL_OVERLAP",
+  ].includes(savedOutcome ?? "")
+    ? (savedOutcome as FinalOutcome)
+    : ["REPLACES", "PARTIALLY_OVERRIDES", "COMPLEMENTS", "NO_MATERIAL_OVERLAP"].includes(
+          match.recommendation,
+        )
+      ? (match.recommendation as FinalOutcome)
+      : "";
+  const [outcome, setOutcome] = useState<FinalOutcome | "">(initialOutcome);
+  const [rationale, setRationale] = useState(match.decision?.rationale ?? "");
+  const [topicScope, setTopicScope] = useState<string[]>(match.decision?.topicScope ?? []);
+  const [customTopic, setCustomTopic] = useState("");
+  const locked =
+    run.candidateVersion.status === "PUBLISHED" || run.candidateVersion.status === "SUPERSEDED";
+  const finalNeedsRationale = outcome === "REPLACES" || outcome === "PARTIALLY_OVERRIDES";
+  const canSave = outcome !== "" && (!finalNeedsRationale || rationale.trim().length >= 3);
 
   return (
     <article className="overlap-comparison">
@@ -502,6 +619,40 @@ function OverlapComparison({
               </h3>
               <p>Bandingkan aturan aktif dengan isi draft sebelum mencatat keputusan HR.</p>
             </header>
+            {match.evidenceStatus !== "CURRENT" ? (
+              <p className="overlap-inline-note">
+                Evidence sudah stale atau tidak tersedia. Jalankan analisis ulang sebelum keputusan
+                material.
+              </p>
+            ) : null}
+            {match.evidence.map((item) => (
+              <article
+                className="overlap-evidence-card"
+                key={`${item.candidate.versionId}-${item.existing.versionId}-${item.explanation}`}
+              >
+                <div>
+                  <strong>Draft — halaman {item.candidate.page ?? "?"}</strong>
+                  <p>{item.candidate.excerpt}</p>
+                  <a
+                    href={`/hr/documents/${item.candidate.versionId}?page=${item.candidate.page ?? 1}`}
+                  >
+                    Buka halaman sumber
+                  </a>
+                </div>
+                <div>
+                  <strong>Existing — halaman {item.existing.page ?? "?"}</strong>
+                  <p>{item.existing.excerpt}</p>
+                  <a
+                    href={`/hr/documents/${item.existing.versionId}?page=${item.existing.page ?? 1}`}
+                  >
+                    Buka halaman sumber
+                  </a>
+                </div>
+                <p>
+                  <em>{item.explanation}</em>
+                </p>
+              </article>
+            ))}
             {match.changedRules.length ? (
               <div className="overlap-rule-list">
                 {match.changedRules.map((rule, index) => (
@@ -559,36 +710,138 @@ function OverlapComparison({
         <div className="overlap-decision__label">
           <span className="section-index">KEPUTUSAN HR</span>
           {decided ? (
-            <StatusStamp status={match.decision?.decision ?? ""} label={decided.label} />
+            <StatusStamp
+              status={match.decision?.outcome ?? match.decision?.status ?? ""}
+              label={decided.label}
+            />
           ) : null}
         </div>
-        {!decided ? (
-          <div className="overlap-decision__actions">
-            <Button disabled={busy} type="button" onClick={() => onDecision(match.recommendation)}>
-              <Check weight="bold" /> {recommendation.confirmLabel}
-            </Button>
-            {match.recommendation !== "MANUAL_REVIEW" ? (
+        <div className="overlap-decision__form">
+          <label>
+            Outcome keputusan HR
+            <select
+              value={outcome}
+              onChange={(event) => setOutcome(event.target.value as FinalOutcome | "")}
+              disabled={busy || locked}
+            >
+              <option value="" disabled>
+                Pilih outcome keputusan HR
+              </option>
+              <option value="REPLACES">Menggantikan seluruh aturan lama</option>
+              <option value="PARTIALLY_OVERRIDES">Mengubah sebagian aturan</option>
+              <option value="COMPLEMENTS">Melengkapi</option>
+              <option value="NO_MATERIAL_OVERLAP">Tidak ada overlap material</option>
+            </select>
+          </label>
+          <p className="overlap-inline-note">
+            {outcome === "REPLACES"
+              ? "Dokumen existing akan menjadi superseded saat draft dipublish."
+              : outcome === "PARTIALLY_OVERRIDES"
+                ? "Dokumen existing tetap berlaku untuk topik di luar scope."
+                : outcome === "COMPLEMENTS"
+                  ? "Kedua dokumen tetap published."
+                  : outcome === "NO_MATERIAL_OVERLAP"
+                    ? "Tidak ada relation lifecycle yang dibuat."
+                    : "Pilih outcome final atau tandai perlu review lanjutan."}
+          </p>
+          {outcome === "PARTIALLY_OVERRIDES" ? (
+            <div>
+              <span>Topic scope (wajib)</span>
+              <div>
+                {[
+                  ...new Set([
+                    ...match.sharedTopics,
+                    ...match.changedRules.map((rule) => rule.subject),
+                    ...topicScope,
+                  ]),
+                ].map((topic) => (
+                  <button
+                    key={topic}
+                    type="button"
+                    aria-pressed={topicScope.includes(topic)}
+                    disabled={busy || locked}
+                    onClick={() =>
+                      setTopicScope((current) =>
+                        current.includes(topic)
+                          ? current.filter((item) => item !== topic)
+                          : [...current, topic],
+                      )
+                    }
+                  >
+                    {topic}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={customTopic}
+                onChange={(event) => setCustomTopic(event.target.value)}
+                placeholder="Topik tambahan"
+                disabled={busy || locked}
+              />
               <Button
                 variant="secondary"
-                disabled={busy}
                 type="button"
-                onClick={() => onDecision("MANUAL_REVIEW")}
+                disabled={!customTopic.trim() || topicScope.length >= 20 || busy || locked}
+                onClick={() => {
+                  const value = customTopic.trim();
+                  setTopicScope((current) =>
+                    current.includes(value) ? current : [...current, value],
+                  );
+                  setCustomTopic("");
+                }}
               >
-                Review manual
+                Tambah topik
               </Button>
-            ) : null}
-            {match.recommendation !== "NO_MATERIAL_OVERLAP" ? (
-              <Button
-                variant="neutral"
-                disabled={busy}
-                type="button"
-                onClick={() => onDecision("NO_MATERIAL_OVERLAP")}
-              >
-                Tidak tumpang tindih
-              </Button>
-            ) : null}
+              <small>{topicScope.length}/20 topik</small>
+              {topicScope.length === 0 ? <small>Tambahkan minimal satu topik.</small> : null}
+            </div>
+          ) : null}
+          <label>
+            Rationale {finalNeedsRationale ? "(wajib)" : "(opsional)"}
+            <textarea
+              value={rationale}
+              onChange={(event) => setRationale(event.target.value)}
+              maxLength={2_000}
+              rows={4}
+              disabled={busy || locked}
+            />
+          </label>
+          {locked ? (
+            <p className="overlap-inline-note">Keputusan immutable karena versi sudah dipublish.</p>
+          ) : null}
+          <div className="overlap-decision__actions">
+            <Button
+              disabled={
+                busy ||
+                locked ||
+                !canSave ||
+                (outcome === "PARTIALLY_OVERRIDES" && topicScope.length === 0)
+              }
+              type="button"
+              onClick={() =>
+                outcome
+                  ? onDecision({
+                      status: "FINAL",
+                      outcome,
+                      ...(rationale.trim() ? { rationale: rationale.trim() } : {}),
+                      ...(outcome === "PARTIALLY_OVERRIDES" ? { topicScope } : {}),
+                    })
+                  : undefined
+              }
+            >
+              <Check weight="bold" />
+              {outcome ? decisionPresentation(outcome).confirmLabel : "Simpan keputusan"}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={busy || locked || rationale.trim().length < 3}
+              type="button"
+              onClick={() => onDecision({ status: "PENDING_REVIEW", rationale: rationale.trim() })}
+            >
+              Tandai perlu review lanjutan
+            </Button>
           </div>
-        ) : null}
+        </div>
       </footer>
     </article>
   );

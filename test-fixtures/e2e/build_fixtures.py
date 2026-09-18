@@ -5,12 +5,6 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt
 from PIL import Image, ImageDraw, ImageFont
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import mm
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 
 ROOT = Path(__file__).resolve().parent
@@ -32,14 +26,15 @@ def create_docx() -> None:
     opening.add_run("Kepada seluruh karyawan PT Contoh Nusantara").bold = True
     document.add_heading("Ketentuan yang berlaku", level=1)
     document.add_paragraph(
-        "Mulai 1 Januari 2027, hak cuti tahunan berubah dari 11 hari kerja menjadi 36 hari kerja "
+        "Mulai 1 Februari 2026, karyawan yang telah bekerja 12 bulan berturut-turut memperoleh "
+        "12 hari kerja cuti tahunan "
         "dalam satu tahun kalender. Permohonan cuti diajukan melalui portal HR paling lambat tiga "
-        "hari kerja sebelum tanggal cuti. Maksimal 10 hari dapat dibawa ke tahun berikutnya dan harus "
+        "hari kerja sebelum tanggal cuti. Maksimal 5 hari dapat dibawa ke tahun berikutnya dan harus "
         "digunakan paling lambat 30 Juni."
     )
     document.add_heading("Hubungan dengan aturan sebelumnya", level=1)
     document.add_paragraph(
-        "IOM ini diusulkan sebagai pengganti IOM 014 2024 untuk topik hak cuti tahunan. Hubungan "
+        "IOM ini diusulkan sebagai pengganti IOM 014 2014 untuk topik hak cuti tahunan. Hubungan "
         "penggantian baru berlaku setelah HR mengonfirmasinya di sistem. Dokumen uji ketiga ini "
         "memakai pemisahan section untuk menguji sanitasi parsial."
     )
@@ -58,56 +53,6 @@ def create_docx() -> None:
     styles["Title"].font.size = Pt(20)
     styles["Heading 1"].font.size = Pt(13)
     document.save(ROOT / "iom-021-2026-cuti-baru.docx")
-
-
-def create_text_pdf() -> None:
-    output = ROOT / "iom-028-2026-kerja-hibrida.pdf"
-    styles = getSampleStyleSheet()
-    body = ParagraphStyle(
-        "Body",
-        parent=styles["BodyText"],
-        fontName="Helvetica",
-        fontSize=10.5,
-        leading=15,
-        spaceAfter=8,
-    )
-    heading = ParagraphStyle(
-        "Heading",
-        parent=styles["Heading1"],
-        fontName="Helvetica-Bold",
-        fontSize=18,
-        leading=22,
-        textColor="#20201E",
-        spaceAfter=14,
-    )
-    doc = SimpleDocTemplate(
-        str(output),
-        pagesize=A4,
-        leftMargin=22 * mm,
-        rightMargin=22 * mm,
-        topMargin=20 * mm,
-        bottomMargin=20 * mm,
-        title="IOM 028 2026 Pedoman Kerja Hibrida",
-    )
-    story = [
-        Paragraph("IOM 028 2026 Pedoman Kerja Hibrida", heading),
-        Paragraph("Kepada seluruh karyawan PT Contoh Nusantara", body),
-        Paragraph(
-            "Mulai 15 September 2026, karyawan yang pekerjaannya mendukung dapat bekerja dari rumah "
-            "maksimal dua hari setiap minggu. Jadwal disepakati bersama atasan dan dicatat sebelum "
-            "pukul 16.00 pada hari kerja sebelumnya.", body
-        ),
-        Paragraph(
-            "Hari kerja dari kantor tetap diperlukan untuk rapat yang ditetapkan sebagai tatap muka, "
-            "onboarding, dan kegiatan yang memakai dokumen fisik. Penilaian kinerja tidak boleh "
-            "dibedakan hanya karena lokasi kerja.", body
-        ),
-        Paragraph(
-            "Karyawan wajib memakai perangkat perusahaan, VPN, serta ruang kerja yang menjaga "
-            "kerahasiaan percakapan dan dokumen internal.", body
-        ),
-    ]
-    doc.build(story)
 
 
 def create_scan_pdf() -> None:
@@ -145,7 +90,6 @@ if __name__ == "__main__":
     if target == "docx":
         create_docx()
     elif target == "pdf":
-        create_text_pdf()
         create_scan_pdf()
     else:
         raise SystemExit("target must be docx or pdf")

@@ -19,7 +19,12 @@ function ReviewsPage() {
       ) : (
         <div className="review-list">
           {pending.map((version) => (
-            <Link key={version.id} to="/hr/documents/$versionId" params={{ versionId: version.id }}>
+            <Link
+              key={version.id}
+              to="/hr/documents/$versionId"
+              params={{ versionId: version.id }}
+              search={{}}
+            >
               <ShieldWarning weight="bold" />
               <span>
                 <code>{version.iomNumber}</code>

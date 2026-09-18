@@ -42,7 +42,9 @@ membuat conversation beserta request message secara atomik. Draft yang ditutup t
 meninggalkan session kosong; setelah commit, response memberi session ID agar browser mengganti URL
 secara in-place tanpa remount stream. Migration cleanup juga menghapus row legacy tanpa message.
 
-Model dan reasoning dipilih dari allowlist server. Scoped `search_iom` membentuk filter dari actor,
+Allowlist runtime saat ini hanya berisi `gpt-5.6-luna` dengan reasoning `high` untuk chat,
+confidentiality, dan overlap; tidak ada fallback model atau stub pada jalur production. Scoped
+`search_iom` membentuk filter dari actor,
 bukan argumen model. Agent maksimal empat turn dan harus abstain tanpa evidence. Anvia Client
 Protocol v3 memproyeksikan reasoning summary, tool status, source, dan answer ke JSONL. Rolling
 release guard menahan delta pendek dan membatalkan run bila normalized confidential fingerprint
@@ -52,9 +54,16 @@ terdeteksi.
 
 `IomDocument` adalah identitas aturan; `IomVersion` adalah revisinya. Upload baru dapat dikaitkan
 ke versi sebelumnya sebelum publish. Relasi `REPLACES`, `COMPLEMENTS`, dan
-`PARTIALLY_OVERRIDES` hanya berlaku setelah keputusan HR. Kemiripan semantik tidak pernah otomatis
-berarti menggantikan.
+`PARTIALLY_OVERRIDES` hanya berlaku setelah keputusan HR. Keputusan disimpan sebagai satu row aktif
+yang dapat diperbarui sebelum publish, sedangkan setiap perubahan dicatat sebagai `AuditEvent`.
+`MANUAL_REVIEW` hanya status sementara dan tidak pernah menjadi outcome final.
 
-Keputusan overlap `ARCHIVE_EXISTING` membentuk relasi `REPLACES`, sedangkan
-`PUBLISH_AS_COMPLEMENT` membentuk `COMPLEMENTS`. Perubahan status target tetap baru terjadi dalam
-transaksi publish yang dikonfirmasi HR, bukan ketika model menghasilkan rekomendasi.
+Overlap memakai seluruh halaman draft sebagai probe (window 800 karakter dengan overlap 100), lalu
+memadukan semantic, lexical, dan explicit candidates. Semua chunk existing dibaca ulang dari
+PostgreSQL dan dire-authorize sebelum masuk ke model. Hasil model material wajib memiliki evidence
+dari kedua versi; confidence rendah, conflict, provenance invalid, atau coverage terpotong dipaksa
+ke review HR. Run tanpa kandidat tetap membutuhkan konfirmasi HR.
+
+`REPLACES` baru membentuk supersede ketika publish. `PARTIALLY_OVERRIDES` menyimpan `topicScope`
+dan mempertahankan versi lama published untuk topik lain; `COMPLEMENTS` mempertahankan keduanya.
+Kemiripan semantik tidak pernah otomatis berarti menggantikan.

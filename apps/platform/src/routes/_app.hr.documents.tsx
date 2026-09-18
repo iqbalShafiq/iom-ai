@@ -41,6 +41,7 @@ function DocumentsPage() {
               key={version.id}
               to="/hr/documents/$versionId"
               params={{ versionId: version.id }}
+              search={{}}
               className="data-table__row"
             >
               <code>{version.iomNumber}</code>

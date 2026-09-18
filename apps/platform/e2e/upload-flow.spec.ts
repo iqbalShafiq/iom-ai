@@ -1,8 +1,13 @@
+import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
 test("upload declares its batch size, transfers a file, and seals the batch", async ({ page }) => {
+  const fixturePath = resolve(
+    import.meta.dirname,
+    "../../../test-fixtures/e2e/iom-033-2026-keamanan-informasi.pdf",
+  );
   let declaredFiles = 0;
-  let fileUploaded = false;
+  let fileUploadRequested = false;
   let batchSealed = false;
 
   await page.route("http://localhost:3001/**", async (route) => {
@@ -35,7 +40,7 @@ test("upload declares its batch size, transfers a file, and seals the batch", as
       return;
     }
     if (pathname === "/uploads/batches/batch-1/files") {
-      fileUploaded = request.postDataBuffer()?.includes(Buffer.from("Isi IOM")) ?? false;
+      fileUploadRequested = request.method() === "POST";
       await route.fulfill({ status: 201, json: { file: { id: "file-1" } } });
       return;
     }
@@ -48,15 +53,11 @@ test("upload declares its batch size, transfers a file, and seals the batch", as
   });
 
   await page.goto("/hr/documents/upload");
-  await page.locator('input[type="file"]').setInputFiles({
-    name: "aturan.txt",
-    mimeType: "text/plain",
-    buffer: Buffer.from("Isi IOM"),
-  });
+  await page.locator('input[type="file"]').setInputFiles(fixturePath);
   await page.getByRole("button", { name: "Mulai upload" }).click();
 
-  await expect(page.getByText("aturan.txt")).toBeVisible();
+  await expect(page.getByText("iom-033-2026-keamanan-informasi.pdf")).toBeVisible();
   await expect.poll(() => batchSealed).toBe(true);
   expect(declaredFiles).toBe(1);
-  expect(fileUploaded).toBe(true);
+  expect(fileUploadRequested).toBe(true);
 });

@@ -21,6 +21,11 @@ dan platform sebagai tiga process/service terpisah di production.
 
 `pnpm user:create` memakai kebijakan password yang sama dengan login: panjang 8–256 karakter.
 
+Runtime mengunci classifier dan overlap ke `gpt-5.6-luna` di konfigurasi aplikasi; nilai model lama
+di environment diabaikan agar tidak dapat mengubah model production. Katalog chat juga hanya
+menyediakan model tersebut. Ketiga workload memakai reasoning `high` dan tidak mempunyai fallback
+stub.
+
 ## Worker recovery
 
 Job memakai lease dan heartbeat. Worker yang mati boleh langsung direstart; job `RUNNING` dengan
@@ -36,6 +41,19 @@ tanpa mengulang parsing/OCR/classification.
 
 `WORKER_AI_TIMEOUT_MS` membatasi satu operasi model. Naikkan hanya berdasarkan ukuran dokumen dan
 latency provider yang terukur; timeout tetap dianggap transient dan mengikuti bounded retry.
+
+## Overlap resolution
+
+`ANALYZE_OVERLAP` memproses seluruh logical page draft, menjalankan semantic dan lexical retrieval
+dengan concurrency terbatas, lalu menyimpan metrics aman pada `OverlapRun`. Status run mengikuti
+`QUEUED → RUNNING → COMPLETED|FAILED`; kegagalan retrieval atau model tidak boleh ditampilkan
+sebagai zero overlap. `FAILED` dianalisis ulang dengan membuat run baru.
+
+Keputusan HR final hanya dapat diubah sebelum candidate dipublish. `REPLACES` mengubah existing
+menjadi `SUPERSEDED` pada transaksi publish; partial dan complement tidak menurunkan existing.
+Jika migration menemukan keputusan manual lama, UI menampilkannya sebagai `PENDING_REVIEW` dan HR
+wajib menyelesaikannya ulang. Backup PostgreSQL dilakukan sebelum migration overlap dan Qdrant tidak
+pernah menjadi sumber kebenaran authorization.
 
 ## Policy rollout
 

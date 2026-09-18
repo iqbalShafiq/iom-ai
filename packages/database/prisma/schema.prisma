@@ -79,10 +79,30 @@ enum ChunkingStrategy {
 }
 
 enum OverlapRecommendation {
-  ARCHIVE_EXISTING
-  PUBLISH_AS_COMPLEMENT
+  REPLACES
+  PARTIALLY_OVERRIDES
+  COMPLEMENTS
   NO_MATERIAL_OVERLAP
   MANUAL_REVIEW
+}
+
+enum OverlapDecisionStatus {
+  PENDING_REVIEW
+  FINAL
+}
+
+enum OverlapDecisionOutcome {
+  REPLACES
+  PARTIALLY_OVERRIDES
+  COMPLEMENTS
+  NO_MATERIAL_OVERLAP
+}
+
+enum OverlapRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
 }
 
 model User {
@@ -99,6 +119,8 @@ model User {
   uploadBatches UploadBatch[]
   annotations  IomAnnotation[]
   auditEvents  AuditEvent[]
+  noMatchConfirmedRuns OverlapRun[] @relation("OverlapNoMatchConfirmer")
+  overlapDecisions OverlapDecision[] @relation("OverlapDecisionDecider")
 }
 
 model AuthSession {
@@ -339,15 +361,22 @@ model ConfidentialityDecision {
 model OverlapRun {
   id                 String      @id @default(uuid()) @db.Uuid
   candidateVersionId String      @db.Uuid
-  status             String
+  status             OverlapRunStatus
   modelId            String
   errorCode          String?
+  coverageComplete   Boolean     @default(false)
+  analysisMetrics    Json?
+  noMatchConfirmedAt DateTime?
+  noMatchConfirmedById String?   @db.Uuid
+  noMatchNote        String?
   createdAt          DateTime    @default(now())
   completedAt        DateTime?
   candidateVersion   IomVersion  @relation("OverlapCandidate", fields: [candidateVersionId], references: [id])
+  noMatchConfirmedBy User?       @relation("OverlapNoMatchConfirmer", fields: [noMatchConfirmedById], references: [id])
   matches            OverlapMatch[]
 
   @@index([candidateVersionId, createdAt])
+  @@index([noMatchConfirmedById])
 }
 
 model OverlapMatch {
@@ -372,10 +401,14 @@ model OverlapDecision {
   id           String       @id @default(uuid()) @db.Uuid
   matchId      String       @unique @db.Uuid
   decidedById  String       @db.Uuid
-  decision     String
-  note         String?
+  status       OverlapDecisionStatus
+  outcome      OverlapDecisionOutcome?
+  rationale    String?
+  topicScope   Json?
   createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
   match        OverlapMatch @relation(fields: [matchId], references: [id])
+  decidedBy    User         @relation("OverlapDecisionDecider", fields: [decidedById], references: [id])
   relation     IomRelation?
 }
 

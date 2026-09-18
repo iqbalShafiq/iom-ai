@@ -61,16 +61,24 @@ describe("versioned security corpus", () => {
         overlapRun: {
           status: "COMPLETED",
           createdAt: new Date(confirmedAt.getTime() + 1),
+          coverageComplete: true,
+          noMatchConfirmedAt: confirmedAt,
           matches: [] as Array<{
             existingVersionId: string;
             decisionId: string | null;
-            decision: string | null;
+            decisionStatus: string | null;
+            outcome: string | null;
+            rationale: string | null;
+            topicScope: unknown;
+            recommendation: string;
+            evidenceStatus: "CURRENT" | "STALE" | "MISSING";
           }>,
         },
         relations: [] as Array<{
           targetVersionId: string;
           type: string;
           overlapDecisionId: string | null;
+          topicScope: unknown;
         }>,
       };
       if (item.mutation === "UNREVIEWED_CONFIDENTIALITY") {
@@ -84,7 +92,12 @@ describe("versioned security corpus", () => {
         input.overlapRun.matches.push({
           existingVersionId: "existing-version",
           decisionId: "decision-1",
-          decision: "ARCHIVE_EXISTING",
+          decisionStatus: "FINAL",
+          outcome: "REPLACES",
+          rationale: "Menggantikan aturan lama.",
+          topicScope: [],
+          recommendation: "REPLACES",
+          evidenceStatus: "CURRENT",
         });
       }
 
