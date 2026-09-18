@@ -18,7 +18,13 @@ export function createApp(
   observability?: IomObservability,
 ) {
   const app = new Hono<AppBindings>();
-  app.use("*", secureHeaders());
+  app.use(
+    "*",
+    secureHeaders({
+      xFrameOptions: false,
+      crossOriginResourcePolicy: false,
+    }),
+  );
   app.use(
     "*",
     cors({

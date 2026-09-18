@@ -38,6 +38,7 @@ describe("API boundary", () => {
     const response = await app.request("/health");
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: "ok" });
+    expect(response.headers.get("x-frame-options")).toBeNull();
   });
 
   it("rejects cross-origin mutations", async () => {

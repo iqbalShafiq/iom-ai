@@ -1,12 +1,12 @@
 import { Button, PageHeader, Panel, ProgressBar } from "@iom/ui";
 import { ArrowRight, UploadSimple } from "@phosphor-icons/react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { apiFetch } from "@/lib/api";
 import type { UploadBatchRow } from "@/lib/types";
 
 export const Route = createFileRoute("/_app/hr/")({
   beforeLoad: ({ context }) => {
-    if (context.user.role !== "HR_ADMIN") throw new Error("FORBIDDEN");
+    if (context.user.role !== "HR_ADMIN") throw redirect({ to: "/chat" });
   },
   loader: async () => {
     const [uploads, reviews] = await Promise.all([

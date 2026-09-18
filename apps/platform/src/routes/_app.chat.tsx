@@ -49,7 +49,10 @@ function ChatLanding() {
         }
       />
       {conversations.length === 0 ? (
-        <EmptyState title="Belum ada chat" description="Mulai percakapan baru" />
+        <EmptyState
+          title="Belum ada chat"
+          description="Mulai percakapan baru untuk menanyakan kebijakan IOM yang sudah diotorisasi."
+        />
       ) : (
         <div className="conversation-list">
           {conversations.map((conversation, index) => (

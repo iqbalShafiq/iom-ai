@@ -70,6 +70,48 @@ function FileNameTitle({ fileName }: { fileName: string }) {
   );
 }
 
+function PdfPreview({ versionId, title }: { versionId: string; title: string }) {
+  const [src, setSrc] = useState("");
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let objectUrl = "";
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(apiUrl(`/iom/${versionId}/file`), { credentials: "include" });
+        if (!response.ok) throw new Error("Preview gagal dimuat.");
+        const blob = await response.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (!cancelled) setSrc(objectUrl);
+      } catch {
+        if (!cancelled) setError("Preview PDF tidak dapat dimuat. Gunakan panel review di kanan.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [versionId]);
+  if (error) {
+    return (
+      <div className="preview-placeholder">
+        <FilePdf size={44} />
+        <strong>Preview gagal dimuat</strong>
+        <span>{error}</span>
+      </div>
+    );
+  }
+  if (!src) {
+    return (
+      <div className="preview-placeholder" aria-busy="true">
+        <strong>Memuat preview</strong>
+        <span>Menyiapkan PDF untuk ditinjau.</span>
+      </div>
+    );
+  }
+  return <iframe title={`Preview ${title}`} src={src} />;
+}
+
 function formatDocumentDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Tanggal tidak tersedia";
@@ -249,7 +291,7 @@ function ReviewWorkspace({
     <div className="review-split">
       <section className="document-preview" aria-label="Preview dokumen">
         {version.uploadedFile?.mimeType === "application/pdf" ? (
-          <iframe title={`Preview ${version.title}`} src={apiUrl(`/iom/${version.id}/file`)} />
+          <PdfPreview versionId={version.id} title={version.title} />
         ) : (
           <div className="preview-placeholder">
             <FilePdf size={44} />

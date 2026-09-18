@@ -600,7 +600,13 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
       createReadStream(storage.absolutePath(version.uploadedFile.storageKey)),
     ) as ReadableStream;
     return new Response(stream, {
-      headers: { "Content-Type": version.uploadedFile.mimeType, "Content-Disposition": "inline" },
+      headers: {
+        "Content-Type": version.uploadedFile.mimeType,
+        "Content-Disposition": "inline",
+        // Preview is framed by the platform origin, not the API origin.
+        "Content-Security-Policy": `frame-ancestors ${config.PLATFORM_ORIGIN}`,
+        "Cross-Origin-Resource-Policy": "cross-origin",
+      },
     });
   });
 

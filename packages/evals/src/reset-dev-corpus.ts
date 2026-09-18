@@ -8,7 +8,6 @@ const REPO_PDF_NAMES = new Set([
   "iom-021-2026-kebijakan-cuti-tahunan.pdf",
   "iom-028-2026-pedoman-kerja-hibrida.pdf",
   "iom-033-2026-keamanan-informasi.pdf",
-  "iom-029-2026-darurat-scan.pdf",
 ]);
 
 export async function resetDevCorpus(
