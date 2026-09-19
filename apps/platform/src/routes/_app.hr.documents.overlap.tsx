@@ -410,6 +410,20 @@ function OverlapPage() {
                   <time dateTime={selectedRun.createdAt}>
                     {formatRunDate(selectedRun.createdAt)}
                   </time>
+                  {selectedRun.status === "COMPLETED" &&
+                  ["IN_REVIEW", "READY_TO_PUBLISH"].includes(selectedRun.candidateVersion.status) &&
+                  selectedRun.candidateVersion.metadataConfirmedAt &&
+                  new Date(selectedRun.candidateVersion.metadataConfirmedAt).getTime() >
+                    new Date(selectedRun.createdAt).getTime() ? (
+                    <Button
+                      variant="secondary"
+                      disabled={busy}
+                      type="button"
+                      onClick={() => void run(selectedRun.candidateVersion.id)}
+                    >
+                      <Play weight="bold" /> Analisis ulang
+                    </Button>
+                  ) : null}
                 </div>
               </header>
 
@@ -733,17 +747,6 @@ function OverlapComparison({
               <option value="NO_MATERIAL_OVERLAP">Tidak ada overlap material</option>
             </select>
           </label>
-          <p className="overlap-inline-note">
-            {outcome === "REPLACES"
-              ? "Dokumen existing akan menjadi superseded saat draft dipublish."
-              : outcome === "PARTIALLY_OVERRIDES"
-                ? "Dokumen existing tetap berlaku untuk topik di luar scope."
-                : outcome === "COMPLEMENTS"
-                  ? "Kedua dokumen tetap published."
-                  : outcome === "NO_MATERIAL_OVERLAP"
-                    ? "Tidak ada relation lifecycle yang dibuat."
-                    : "Pilih outcome final atau tandai perlu review lanjutan."}
-          </p>
           {outcome === "PARTIALLY_OVERRIDES" ? (
             <div>
               <span>Topic scope (wajib)</span>
@@ -797,17 +800,22 @@ function OverlapComparison({
             </div>
           ) : null}
           <label>
-            Rationale {finalNeedsRationale ? "(wajib)" : "(opsional)"}
+            Alasan {finalNeedsRationale ? "(wajib)" : "(opsional)"}
             <textarea
               value={rationale}
               onChange={(event) => setRationale(event.target.value)}
               maxLength={2_000}
               rows={4}
+              placeholder={
+                locked ? "Tidak ada keterangan yang ditambahkan" : "Tuliskan alasan keputusan HR"
+              }
               disabled={busy || locked}
             />
           </label>
           {locked ? (
-            <p className="overlap-inline-note">Keputusan immutable karena versi sudah dipublish.</p>
+            <p className="overlap-inline-note">
+              Keputusan tidak dapat diubah karena versi sudah dipublish
+            </p>
           ) : null}
           <div className="overlap-decision__actions">
             <Button

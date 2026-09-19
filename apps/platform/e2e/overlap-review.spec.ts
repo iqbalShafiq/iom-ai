@@ -150,6 +150,9 @@ test("overlap review focuses one comparison and confirms an explicit HR decision
   await expect(page.getByRole("heading", { name: "Tidak ditemukan tumpang tindih" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Bukti perbandingan" })).toHaveCount(0);
   await expect(page.getByText("KONTEKS BERSAMA", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Alasan \(opsional\)/i)).toBeVisible();
+  await expect(page.getByText("Kedua dokumen tetap published.", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".overlap-decision__actions")).toHaveCSS("display", "flex");
   await expect(page.getByRole("button", { name: "Tandai tidak tumpang tindih" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Tandai perlu review lanjutan" })).toBeVisible();
 

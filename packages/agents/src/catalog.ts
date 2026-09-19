@@ -1,11 +1,16 @@
 import type { OpenAIClient, OpenAICompletionModel, OpenAIReasoningControls } from "@anvia/openai";
-import { DEFAULT_RUNTIME_MODEL_ID, type ModelOption, type ReasoningEffort } from "@iom/contracts";
+import {
+  DEFAULT_REASONING_EFFORT,
+  DEFAULT_RUNTIME_MODEL_ID,
+  type ModelOption,
+  type ReasoningEffort,
+} from "@iom/contracts";
 
 export const defaultOpenAIModelId = DEFAULT_RUNTIME_MODEL_ID;
 
 export const agentReasoningEfforts = {
-  confidentiality: "high",
-  overlap: "high",
+  confidentiality: DEFAULT_REASONING_EFFORT,
+  overlap: DEFAULT_REASONING_EFFORT,
 } as const satisfies Record<string, ReasoningEffort>;
 
 export type IomOpenAIModel = OpenAICompletionModel<OpenAIReasoningControls>;
@@ -13,10 +18,10 @@ export type IomOpenAIModel = OpenAICompletionModel<OpenAIReasoningControls>;
 export const modelCatalog = [
   {
     id: defaultOpenAIModelId,
-    label: "DeepSeek V4 Flash 0731",
+    label: "GPT-5.6 Luna",
     description: "Model runtime untuk chat, klasifikasi kerahasiaan, overlap, dan evaluasi.",
-    supportedReasoningEfforts: ["high"],
-    defaultReasoningEffort: "high",
+    supportedReasoningEfforts: [DEFAULT_REASONING_EFFORT],
+    defaultReasoningEffort: DEFAULT_REASONING_EFFORT,
     supportsStreaming: true,
     supportsTools: true,
     supportsReasoningSummary: true,
@@ -40,9 +45,10 @@ export function resolveModelSelection(
 
 export function resolveModelApi(
   modelId: string,
-  _catalog: readonly ModelOption[] = modelCatalog,
-): "chat" | "responses" {
-  return modelId.startsWith("deepseek") ? "chat" : "responses";
+  catalog: readonly ModelOption[] = modelCatalog,
+): "responses" {
+  if (!catalog.some((option) => option.id === modelId)) throw new Error("MODEL_NOT_ALLOWED");
+  return "responses";
 }
 
 export function openaiReasoning(reasoningEffort: ReasoningEffort) {

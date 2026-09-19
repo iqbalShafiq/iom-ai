@@ -42,7 +42,7 @@ membuat conversation beserta request message secara atomik. Draft yang ditutup t
 meninggalkan session kosong; setelah commit, response memberi session ID agar browser mengganti URL
 secara in-place tanpa remount stream. Migration cleanup juga menghapus row legacy tanpa message.
 
-Allowlist runtime saat ini hanya berisi `deepseek-v4-flash-0731` (DeepSeek V4 Flash 0731) dengan
+Allowlist runtime saat ini hanya berisi `gpt-5.6-luna` (GPT-5.6 Luna) dengan
 reasoning `high` untuk chat, confidentiality, overlap, dan evaluation; tidak ada fallback model
 atau stub pada jalur production. Observability memakai `@anvia/langfuse` melalui
 `packages/observability`; Lens tetap nonaktif agar tidak menghasilkan trace ganda. Scoped

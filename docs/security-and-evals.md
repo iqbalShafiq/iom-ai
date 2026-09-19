@@ -36,7 +36,7 @@ Sebelum release, perlu dataset organisasi berlabel HR untuk mengukur:
 - seluruh unresolved confidentiality block publish;
 - smoke test streaming/tools/reasoning/cancellation untuk setiap model allowlisted.
 
-Allowlist aktif hanya `deepseek-v4-flash-0731` dengan reasoning `high` untuk candidate dan judge.
+Allowlist aktif hanya `gpt-5.6-luna` dengan reasoning `high` untuk candidate dan judge.
 Capability smoke test protected harus mencakup structured confidentiality, structured overlap
 dengan provenance valid, serta chat yang benar-benar memanggil retrieval; hasil stub atau mock
 tidak memenuhi release gate model-dependent.

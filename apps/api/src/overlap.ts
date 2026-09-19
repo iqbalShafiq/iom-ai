@@ -76,6 +76,7 @@ function versionSummary(version: {
   status: string;
   effectiveFrom: Date;
   effectiveUntil: Date | null;
+  metadataConfirmedAt?: Date | null;
 }) {
   return {
     id: version.id,
@@ -85,6 +86,9 @@ function versionSummary(version: {
     status: version.status,
     effectiveFrom: version.effectiveFrom.toISOString(),
     ...(version.effectiveUntil ? { effectiveUntil: version.effectiveUntil.toISOString() } : {}),
+    ...(version.metadataConfirmedAt
+      ? { metadataConfirmedAt: version.metadataConfirmedAt.toISOString() }
+      : {}),
   };
 }
 
@@ -279,6 +283,7 @@ export function registerOverlapRoutes(app: Hono<AppBindings>, modelId: string) {
             status: true,
             effectiveFrom: true,
             effectiveUntil: true,
+            metadataConfirmedAt: true,
           },
         },
         noMatchConfirmedBy: { select: { name: true } },

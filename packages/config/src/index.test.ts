@@ -29,10 +29,10 @@ describe("server configuration", () => {
     expect(parseServerConfig({ ...required, ANVIA_LENS_URL: "" }).ANVIA_LENS_URL).toBeUndefined();
   });
 
-  it("locks document AI workloads to the approved DeepSeek model", () => {
+  it("locks document AI workloads to the approved GPT-5.6 Luna model", () => {
     const config = parseServerConfig(required);
-    expect(config.CLASSIFIER_MODEL_ID).toBe("deepseek-v4-flash-0731");
-    expect(config.OVERLAP_MODEL_ID).toBe("deepseek-v4-flash-0731");
+    expect(config.CLASSIFIER_MODEL_ID).toBe("gpt-5.6-luna");
+    expect(config.OVERLAP_MODEL_ID).toBe("gpt-5.6-luna");
     expect(
       parseServerConfig({
         ...required,
@@ -40,8 +40,8 @@ describe("server configuration", () => {
         OVERLAP_MODEL_ID: "gpt-6-astra",
       }),
     ).toMatchObject({
-      CLASSIFIER_MODEL_ID: "deepseek-v4-flash-0731",
-      OVERLAP_MODEL_ID: "deepseek-v4-flash-0731",
+      CLASSIFIER_MODEL_ID: "gpt-5.6-luna",
+      OVERLAP_MODEL_ID: "gpt-5.6-luna",
     });
   });
 

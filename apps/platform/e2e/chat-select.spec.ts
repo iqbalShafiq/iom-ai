@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 const model = {
-  id: "deepseek-v4-flash-0731",
-  label: "DeepSeek V4 Flash 0731",
+  id: "gpt-5.6-luna",
+  label: "GPT-5.6 Luna",
   description: "Model chat IOM",
   supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
   defaultReasoningEffort: "low",
@@ -170,7 +170,7 @@ test.beforeEach(async ({ page }) => {
 test("model and reasoning options can be selected by pointer and keyboard", async ({ page }) => {
   await page.goto("/chat/chat-1");
 
-  await expect(page.getByRole("combobox", { name: "Model" })).toHaveText("DeepSeek V4 Flash 0731");
+  await expect(page.getByRole("combobox", { name: "Model" })).toHaveText("GPT-5.6 Luna");
   const reasoning = page.getByRole("combobox", { name: "Reasoning" });
   await expect(reasoning).toHaveText("low");
 

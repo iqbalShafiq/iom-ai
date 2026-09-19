@@ -28,8 +28,8 @@ const config = {
   LANGFUSE_CAPTURE_MODE: "full",
   LANGFUSE_CAPTURE_MAX_BYTES: 65_536,
   OBSERVABILITY_ID_SECRET: undefined,
-  CLASSIFIER_MODEL_ID: "deepseek-v4-flash-0731",
-  OVERLAP_MODEL_ID: "deepseek-v4-flash-0731",
+  CLASSIFIER_MODEL_ID: "gpt-5.6-luna",
+  OVERLAP_MODEL_ID: "gpt-5.6-luna",
 } as const;
 
 describe("API boundary", () => {

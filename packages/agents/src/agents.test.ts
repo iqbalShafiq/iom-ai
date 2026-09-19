@@ -11,7 +11,7 @@ import {
 } from "./catalog.js";
 import { createIomAgent, sanitizeIomChatHistory } from "./chat.js";
 import { classifyConfidentiality, createConfidentialityClassifier } from "./confidentiality.js";
-import { coerceOpenAIResponsesEvent } from "./openai-responses.js";
+import { coerceOpenAIResponsesEvent, mapOpenAIResponsesStream } from "./openai-responses.js";
 import {
   analyzeOverlap,
   createOverlapAnalyzer,
@@ -252,11 +252,11 @@ describe("agent policies", () => {
     ).rejects.toBeInstanceOf(OverlapModelTimeoutError);
   });
 
-  it("exposes only the approved DeepSeek chat configuration", () => {
+  it("exposes only the approved GPT-5.6 Luna chat configuration", () => {
     expect(modelCatalog).toEqual([
       expect.objectContaining({
-        id: "deepseek-v4-flash-0731",
-        label: "DeepSeek V4 Flash 0731",
+        id: "gpt-5.6-luna",
+        label: "GPT-5.6 Luna",
         supportedReasoningEfforts: ["high"],
         defaultReasoningEffort: "high",
       }),
@@ -268,29 +268,24 @@ describe("agent policies", () => {
     expect(() => resolveModelSelection("gpt-5.6-terra", "medium")).toThrow("MODEL_NOT_ALLOWED");
   });
 
-  it("locks DeepSeek chat runs to high reasoning", () => {
-    expect(resolveModelSelection("deepseek-v4-flash-0731", "high")).toEqual({
-      modelId: "deepseek-v4-flash-0731",
+  it("locks GPT-5.6 Luna chat runs to high reasoning", () => {
+    expect(resolveModelSelection("gpt-5.6-luna", "high")).toEqual({
+      modelId: "gpt-5.6-luna",
       reasoningEffort: "high",
     });
-    expect(() => resolveModelSelection("deepseek-v4-flash-0731", "low")).toThrow(
+    expect(() => resolveModelSelection("gpt-5.6-luna", "low")).toThrow(
       "REASONING_EFFORT_NOT_SUPPORTED",
     );
-    expect(() => resolveModelSelection("deepseek-v4-flash-0731", "none")).toThrow(
+    expect(() => resolveModelSelection("gpt-5.6-luna", "none")).toThrow(
       "REASONING_EFFORT_NOT_SUPPORTED",
     );
   });
 
-  it("uses Chat Completions for DeepSeek and Responses for OpenAI reasoning models", () => {
-    expect(resolveModelApi("deepseek-v4-flash-0731")).toBe("chat");
-    expect(resolveModelApi("gpt-5.6-sol")).toBe("responses");
-    expect(resolveModelApi("gpt-5.6-terra")).toBe("responses");
-    expect(resolveModelApi("gpt-6-astra")).toBe("responses");
-    const model = createOpenAIModel(
-      new OpenAIClient({ apiKey: "test-key" }),
-      "deepseek-v4-flash-0731",
-    );
-    expect(model.controls?.reasoningEffort).toBeUndefined();
+  it("uses Responses API only for the allowlisted OpenAI reasoning model", () => {
+    expect(resolveModelApi("gpt-5.6-luna")).toBe("responses");
+    expect(() => resolveModelApi("gpt-5.6-sol")).toThrow("MODEL_NOT_ALLOWED");
+    const model = createOpenAIModel(new OpenAIClient({ apiKey: "test-key" }), "gpt-5.6-luna");
+    expect(model.controls?.reasoningEffort?.defaultValue).toBe("medium");
     expect(openaiReasoning(agentReasoningEfforts.confidentiality)).toEqual({
       controls: { reasoningEffort: "high" },
       providerOptions: { reasoning: { effort: "high", summary: "auto" } },
@@ -298,10 +293,7 @@ describe("agent policies", () => {
   });
 
   it("configures chat, confidentiality, and overlap with the same reasoning placement", () => {
-    const model = createOpenAIModel(
-      new OpenAIClient({ apiKey: "test-key" }),
-      "deepseek-v4-flash-0731",
-    );
+    const model = createOpenAIModel(new OpenAIClient({ apiKey: "test-key" }), "gpt-5.6-luna");
     const chat = createIomAgent({
       model,
       reasoningEffort: "medium",
@@ -321,15 +313,15 @@ describe("agent policies", () => {
     });
     const classifier = createConfidentialityClassifier(model);
     const overlap = createOverlapAnalyzer(model);
-    expect(chat.controls).toBeUndefined();
+    expect(chat.controls).toEqual({ reasoningEffort: "medium" });
     expect(chat.providerOptions).toEqual({
       reasoning: { effort: "medium", summary: "auto" },
     });
-    expect(classifier.controls).toBeUndefined();
+    expect(classifier.controls).toEqual({ reasoningEffort: "high" });
     expect(classifier.providerOptions).toEqual({
       reasoning: { effort: "high", summary: "auto" },
     });
-    expect(overlap.controls).toBeUndefined();
+    expect(overlap.controls).toEqual({ reasoningEffort: "high" });
     expect(overlap.providerOptions).toEqual({
       reasoning: { effort: "high", summary: "auto" },
     });
@@ -397,6 +389,100 @@ describe("agent policies", () => {
         type: "reasoning",
         content: [],
         summary: [{ type: "summary_text", text: "Mencari aturan cuti." }],
+      },
+    });
+  });
+
+  it("reconciles encrypted final reasoning with its streamed summary", async () => {
+    async function* rawEvents() {
+      yield* [
+        {
+          type: "response.reasoning_summary_text.delta",
+          item_id: "rs_1",
+          delta: "Mencari aturan ",
+        },
+        {
+          type: "response.reasoning_summary_text.delta",
+          item_id: "rs_1",
+          delta: "cuti.",
+        },
+        {
+          type: "response.completed",
+          response: {
+            output: [
+              {
+                id: "rs_1",
+                type: "reasoning",
+                content: [],
+                summary: [],
+                encrypted_content: "gAAAAAB",
+              },
+              {
+                id: "msg_1",
+                type: "message",
+                content: [{ type: "output_text", text: "Jawaban" }],
+              },
+            ],
+          },
+        },
+      ];
+    }
+    const stream = mapOpenAIResponsesStream(rawEvents());
+    const events: unknown[] = [];
+    for await (const event of stream) events.push(event);
+    expect(events.at(-1)).toEqual({
+      type: "response.completed",
+      response: {
+        output: [
+          {
+            id: "rs_1",
+            type: "reasoning",
+            content: [],
+            summary: [{ type: "summary_text", text: "Mencari aturan cuti." }],
+          },
+          {
+            id: "msg_1",
+            type: "message",
+            content: [{ type: "output_text", text: "Jawaban" }],
+          },
+        ],
+      },
+    });
+  });
+
+  it("drops terminal-only reasoning that was never streamed", async () => {
+    async function* rawEvents() {
+      yield {
+        type: "response.completed",
+        response: {
+          output: [
+            {
+              id: "rs_terminal_only",
+              type: "reasoning",
+              content: [],
+              summary: [{ type: "summary_text", text: "Ringkasan terminal." }],
+            },
+            {
+              id: "msg_terminal_only",
+              type: "message",
+              content: [{ type: "output_text", text: "Jawaban" }],
+            },
+          ],
+        },
+      };
+    }
+    const events: unknown[] = [];
+    for await (const event of mapOpenAIResponsesStream(rawEvents())) events.push(event);
+    expect(events.at(-1)).toEqual({
+      type: "response.completed",
+      response: {
+        output: [
+          {
+            id: "msg_terminal_only",
+            type: "message",
+            content: [{ type: "output_text", text: "Jawaban" }],
+          },
+        ],
       },
     });
   });

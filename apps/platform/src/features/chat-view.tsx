@@ -51,20 +51,22 @@ function ToolPart() {
   );
 }
 
-function finalizePendingChatMessages(messages: readonly UIMessage[]): readonly UIMessage[] {
+function finalizePendingChatMessages(
+  messages: readonly UIMessage[],
+  dropUnfinishedTools = false,
+): readonly UIMessage[] {
   return messages.flatMap((message) => {
     const parts = (message as { parts?: readonly unknown[] }).parts;
     if (!Array.isArray(parts)) return [message];
-    // Drop tool calls that were still streaming when the run failed: they have
-    // no complete input and cannot be replayed, and rendering them as errors
-    // crashes the react-ui ToolError primitive.
-    const kept = parts.filter(
-      (part) =>
-        !(
-          (part as { type?: string; state?: string }).type === "tool" &&
-          (part as { state?: string }).state === "input-streaming"
-        ),
-    );
+    // Drop tool calls that were still streaming when the run failed or was
+    // cancelled. They have no complete output and leaving them in the
+    // transcript makes a cancelled search look permanently "Running".
+    const kept = parts.filter((part) => {
+      const typedPart = part as { type?: string; state?: string };
+      if (typedPart.type !== "tool") return true;
+      if (typedPart.state === "input-streaming") return false;
+      return !(dropUnfinishedTools && typedPart.state !== "output-available");
+    });
     if (kept.length === parts.length) return [message];
     if (kept.length === 0) return [];
     return [{ ...message, parts: kept }];
@@ -173,6 +175,7 @@ export function ChatView(props: {
     initialPreference?.effort ?? props.conversation.reasoningEffort,
   );
   const latestRunFailedRef = useRef(false);
+  const cancelRequestedRef = useRef(false);
   const draftUrlReplacedRef = useRef(false);
   const pendingDraftConversationIdRef = useRef<string | null>(null);
   const navigate = useNavigate();
@@ -309,10 +312,12 @@ export function ChatView(props: {
   };
   const handleStatusChange = (status: string) => {
     if (status === "error" || status === "ready") {
+      const wasCancelled = cancelRequestedRef.current;
       latestRunFailedRef.current = status === "error";
-      if (status === "error") {
-        chat.setMessages((messages) => finalizePendingChatMessages(messages));
+      if (status === "error" || wasCancelled) {
+        chat.setMessages((messages) => finalizePendingChatMessages(messages, wasCancelled));
       }
+      cancelRequestedRef.current = false;
     }
   };
   // Finalize tool parts that are still streaming when a run errors, so the next
@@ -467,7 +472,12 @@ export function ChatView(props: {
                 </Select>
               </div>
               {isRunning ? (
-                <ComposerPrimitive.Stop className="composer-action composer-action--stop">
+                <ComposerPrimitive.Stop
+                  className="composer-action composer-action--stop"
+                  onClick={() => {
+                    cancelRequestedRef.current = true;
+                  }}
+                >
                   <Stop weight="fill" /> Hentikan
                 </ComposerPrimitive.Stop>
               ) : (

@@ -1286,8 +1286,10 @@ time,
 .document-detail {
   height: 100%;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 0.6rem;
 }
@@ -1301,10 +1303,15 @@ time,
 }
 .document-detail .page-header__title-row {
   min-width: 0;
+  width: 100%;
+  overflow: hidden;
 }
 .document-detail .page-header__title-row h1 {
+  flex: 1 1 0;
   min-width: 0;
   max-width: 50%;
+  width: 0;
+  overflow: hidden;
 }
 .document-detail__file-name {
   min-width: 0;
@@ -1350,6 +1357,7 @@ time,
 }
 .detail-main {
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1360,6 +1368,8 @@ time,
 .detail-main > .review-split {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
 }
 .detail-main > .metadata-editor,
 .detail-main > .ui-panel {
@@ -1831,7 +1841,7 @@ time,
   background: var(--paper-light);
   box-shadow: var(--shadow);
   display: grid;
-  grid-template-columns: 1.5fr 1fr;
+  grid-template-columns: 1fr;
 }
 .dropzone {
   min-height: 330px;
@@ -1854,38 +1864,14 @@ time,
   color: var(--muted);
   max-width: 420px;
 }
-.upload-options {
-  border-left: var(--line);
-  padding: 1.4rem;
-  display: grid;
-  align-content: center;
-  gap: 1.4rem;
-}
-.check-field {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.7rem;
-  align-items: center;
-  cursor: pointer;
-}
-.check-field input {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--orange);
-}
-.check-field span {
-  display: grid;
-  gap: 0.2rem;
-}
-.check-field small {
-  color: var(--muted);
-}
 .upload-selection {
   grid-column: 1 / -1;
   border-top: var(--line);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
   padding: 0.9rem 1rem;
 }
 .upload-selection > span {
@@ -1893,6 +1879,107 @@ time,
   align-items: center;
   gap: 0.5rem;
   font-weight: 750;
+}
+.upload-selection__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.confidential-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 44px;
+  cursor: pointer;
+  user-select: none;
+}
+.confidential-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.confidential-switch__control {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  width: 108px;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0;
+  border: var(--line);
+  background: var(--paper-light);
+  box-shadow: 2px 2px 0 rgba(32, 32, 30, 0.32);
+}
+.confidential-switch__control > .upload-confidential-popover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.confidential-switch__control .ui-popover__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.confidential-switch__icon {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--ink);
+}
+.confidential-switch__icon svg {
+  width: 19px;
+  height: 19px;
+}
+.confidential-switch__thumb {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: var(--ink);
+  transition: transform 140ms ease;
+}
+.confidential-switch:not(.is-confidential)
+  .upload-confidential-popover--public
+  .confidential-switch__icon,
+.confidential-switch.is-confidential
+  .upload-confidential-popover--confidential
+  .confidential-switch__icon {
+  color: var(--paper-light);
+}
+.confidential-switch.is-confidential .confidential-switch__thumb {
+  transform: translateX(100%);
+}
+.confidential-switch:has(input:focus-visible) .confidential-switch__control {
+  outline: 3px solid var(--orange);
+  outline-offset: 2px;
+}
+.upload-confidential-popover .ui-popover__content {
+  min-width: 210px;
+  max-width: 260px;
+}
+.upload-confidential-popover .ui-popover__content span {
+  color: var(--muted);
+  font:
+    500 0.76rem / 1.4 "Geist Variable",
+    sans-serif;
+  text-transform: none;
 }
 .upload-selection > span svg,
 .form-alert svg,
@@ -2055,6 +2142,7 @@ time,
   grid-template-columns: minmax(360px, 0.9fr) minmax(460px, 1.1fr);
   border: var(--line);
   min-height: 0;
+  min-width: 0;
   height: 100%;
   background: var(--paper-light);
   overflow: hidden;
@@ -2119,8 +2207,9 @@ time,
 }
 .review-panel__body {
   min-height: 0;
+  min-width: 0;
   flex: 1;
-  overflow-x: hidden;
+  overflow-x: auto;
   overflow-y: auto;
 }
 .chunk-review {
@@ -2138,6 +2227,8 @@ time,
 }
 .chunk-text {
   margin: 1rem 0;
+  max-width: 100%;
+  overflow-x: auto;
   white-space: pre-wrap;
   line-height: 1.62;
 }
@@ -2981,12 +3072,16 @@ time,
   background: var(--ink);
   color: var(--paper-light);
 }
-.overlap-decision__actions {
+.overlap-decision__form > .overlap-decision__actions {
   display: flex;
   align-items: center;
   justify-content: flex-start;
   flex-wrap: wrap;
   gap: 0.65rem;
+}
+.overlap-decision__actions .ui-button {
+  flex: 1 1 calc(50% - 0.325rem);
+  min-width: min(100%, 220px);
 }
 .overlap-no-overlap {
   min-height: 106px;
@@ -3786,10 +3881,6 @@ time,
   .upload-workbench {
     grid-template-columns: 1fr;
   }
-  .upload-options {
-    border-left: 0;
-    border-top: var(--line);
-  }
   .metadata-editor,
   .version-timeline {
     width: 100%;
@@ -4028,7 +4119,8 @@ time,
     width: 100%;
   }
   .document-detail .page-header__title-row h1 {
-    max-width: 100%;
+    flex: 1 1 auto;
+    max-width: none;
   }
   .document-detail__header-actions {
     width: 100%;
@@ -4118,6 +4210,10 @@ time,
     flex-direction: column;
     gap: 0.7rem;
   }
+  .upload-selection__actions {
+    width: 100%;
+    justify-content: space-between;
+  }
   .rule-diff {
     grid-template-columns: 1fr;
   }
@@ -4151,7 +4247,7 @@ time,
     justify-content: flex-start;
   }
   .overlap-decision__actions .ui-button {
-    width: 100%;
+    width: auto;
   }
   .overlap-empty-layout {
     grid-template-columns: 1fr;

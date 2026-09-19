@@ -7,6 +7,7 @@ test("upload declares its batch size, transfers a file, and seals the batch", as
     "../../../test-fixtures/e2e/iom-033-2026-keamanan-informasi.pdf",
   );
   let declaredFiles = 0;
+  let declaredConfidential = false;
   let fileUploadRequested = false;
   let batchSealed = false;
 
@@ -28,7 +29,12 @@ test("upload declares its batch size, transfers a file, and seals the batch", as
       return;
     }
     if (pathname === "/uploads/batches" && request.method() === "POST") {
-      declaredFiles = (request.postDataJSON() as { expectedFiles: number }).expectedFiles;
+      const payload = request.postDataJSON() as {
+        expectedFiles: number;
+        defaultConfidential: boolean;
+      };
+      declaredFiles = payload.expectedFiles;
+      declaredConfidential = payload.defaultConfidential;
       await route.fulfill({ status: 201, json: { batch: { id: "batch-1" } } });
       return;
     }
@@ -53,11 +59,18 @@ test("upload declares its batch size, transfers a file, and seals the batch", as
   });
 
   await page.goto("/hr/documents/upload");
+  await expect(page.locator('textarea[name="note"]')).toHaveCount(0);
+  const confidentialSwitch = page.getByRole("checkbox", {
+    name: "Tandai seluruh batch confidential",
+  });
+  await page.locator(".confidential-switch").click();
+  await expect(confidentialSwitch).toBeChecked();
   await page.locator('input[type="file"]').setInputFiles(fixturePath);
   await page.getByRole("button", { name: "Mulai upload" }).click();
 
   await expect(page.getByText("iom-033-2026-keamanan-informasi.pdf")).toBeVisible();
   await expect.poll(() => batchSealed).toBe(true);
   expect(declaredFiles).toBe(1);
+  expect(declaredConfidential).toBe(true);
   expect(fileUploadRequested).toBe(true);
 });

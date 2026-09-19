@@ -21,7 +21,7 @@ dan platform sebagai tiga process/service terpisah di production.
 
 `pnpm user:create` memakai kebijakan password yang sama dengan login: panjang 8–256 karakter.
 
-Runtime mengunci classifier, overlap, chat, dan evaluation ke `deepseek-v4-flash-0731` di konfigurasi
+Runtime mengunci classifier, overlap, chat, dan evaluation ke `gpt-5.6-luna` di konfigurasi
 aplikasi; nilai model lama di environment diabaikan agar tidak dapat mengubah model production.
 Katalog chat juga hanya menyediakan model tersebut. Seluruh workload memakai reasoning `high` dan
 tidak mempunyai fallback stub.

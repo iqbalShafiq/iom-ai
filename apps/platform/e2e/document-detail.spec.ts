@@ -89,6 +89,11 @@ test("document detail uses compact metadata header and fullscreen review workspa
     "true",
   );
   await expect(page.locator(".document-preview iframe")).toHaveCount(1);
+  await expect(page.locator(".review-panel__body")).toHaveCSS("overflow-x", "auto");
+  const detailLayout = page.locator(".document-detail");
+  const detailScrollWidth = await detailLayout.evaluate((element) => element.scrollWidth);
+  const detailClientWidth = await detailLayout.evaluate((element) => element.clientWidth);
+  expect(detailScrollWidth).toBeLessThanOrEqual(detailClientWidth);
   await expect(page.getByRole("button", { name: "Buka preview layar penuh" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Buka review layar penuh" })).toHaveCount(0);
 

@@ -64,10 +64,93 @@ function sanitizeOutputItem(item: unknown): unknown {
 }
 
 export async function* mapOpenAIResponsesStream<T>(stream: AsyncIterable<T>): AsyncIterable<T> {
+  const reasoningSummaries = new Map<string, string>();
   for await (const event of stream) {
-    const coerced = coerceOpenAIResponsesEvent(event);
+    rememberReasoningSummary(event, reasoningSummaries);
+    // OpenAI may stream hidden reasoning text separately from the public
+    // summary. The final response intentionally omits that text, so forwarding
+    // it would make Anvia's final-response integrity check fail and would risk
+    // exposing chain-of-thought. Keep only the provider's safe summary stream.
+    if (isRecord(event) && event.type === "response.reasoning_text.delta") continue;
+    const coerced = normalizeOpenAIResponsesEvent(event, reasoningSummaries);
     if (coerced !== undefined) yield coerced as T;
   }
+}
+
+function rememberReasoningSummary(event: unknown, summaries: Map<string, string>) {
+  if (!isRecord(event) || event.type !== "response.reasoning_summary_text.delta") return;
+  const itemId = typeof event.item_id === "string" ? event.item_id : undefined;
+  const delta = typeof event.delta === "string" ? event.delta : undefined;
+  if (!itemId || !delta) return;
+  summaries.set(itemId, `${summaries.get(itemId) ?? ""}${delta}`);
+}
+
+function normalizeOpenAIResponsesEvent(
+  event: unknown,
+  reasoningSummaries: Map<string, string>,
+): unknown {
+  if (!isRecord(event) || typeof event.type !== "string") return event;
+  if (
+    (event.type !== "response.completed" &&
+      event.type !== "response.incomplete" &&
+      event.type !== "response.failed") ||
+    !isRecord(event.response) ||
+    !Array.isArray(event.response.output)
+  ) {
+    return coerceOpenAIResponsesEvent(event);
+  }
+
+  const preserveEmptyReasoning = event.response.output.some(
+    (item) => isRecord(item) && item.type === "function_call",
+  );
+  const output = event.response.output
+    .map((item) => normalizeFinalOutputItem(item, reasoningSummaries, preserveEmptyReasoning))
+    .filter((item): item is Record<string, unknown> => item !== undefined);
+
+  return coerceOpenAIResponsesEvent({
+    ...event,
+    response: { ...event.response, output },
+  });
+}
+
+function normalizeFinalOutputItem(
+  item: unknown,
+  reasoningSummaries: Map<string, string>,
+  preserveEmptyReasoning: boolean,
+): unknown {
+  const sanitized = sanitizeOutputItem(item);
+  if (!isRecord(sanitized) || sanitized.type !== "reasoning") return sanitized;
+
+  const itemId = typeof sanitized.id === "string" ? sanitized.id : undefined;
+  const summary = Array.isArray(sanitized.summary) ? sanitized.summary : [];
+  const hasVisibleSummary = summary.some(
+    (part) => isRecord(part) && typeof part.text === "string" && part.text.length > 0,
+  );
+  const streamedSummary = itemId ? reasoningSummaries.get(itemId) : undefined;
+  if (streamedSummary) {
+    // The accumulator compares its streamed reasoning with the final
+    // response byte-for-byte. Treat the streamed public summary as the
+    // source of truth when the provider's terminal payload differs.
+    return {
+      ...sanitized,
+      summary: [{ type: "summary_text", text: streamedSummary }],
+    };
+  }
+  if (hasVisibleSummary && !preserveEmptyReasoning) {
+    // A terminal summary without a corresponding delta was never seen by the
+    // accumulator. Drop it rather than turning a valid answer into an
+    // invalid-stream-event; hidden reasoning is never forwarded to clients.
+    return undefined;
+  }
+
+  // Keep an empty reasoning item when the provider returned encrypted-only
+  // reasoning. Responses requires that item to remain adjacent to a function
+  // call on the next turn, even though its encrypted payload is not exposed.
+  const content = Array.isArray(sanitized.content) ? sanitized.content : [];
+  if (!preserveEmptyReasoning && !hasVisibleSummary && content.length === 0) {
+    return undefined;
+  }
+  return sanitized;
 }
 
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {

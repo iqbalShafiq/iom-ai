@@ -36,7 +36,11 @@ import { PrismaEvidenceAuthorizer } from "./evidence.js";
 import { rateLimit } from "./rate-limit.js";
 import type { AppBindings } from "./types.js";
 
-async function deniedFingerprints(database: Database) {
+async function deniedFingerprints(database: Database, accessScope: AccessScope) {
+  // HR is authorized to receive HR-only evidence. The stream guard is an
+  // employee-release boundary, so applying the denied fingerprints to HR
+  // would incorrectly abort valid HR answers after they were already streamed.
+  if (accessScope !== "EMPLOYEE") return [];
   const decisions = await database.confidentialityDecision.findMany({
     where: {
       visibility: "HR_ONLY",
@@ -431,7 +435,7 @@ export function registerChatRoutes(
       let chatObservationId: string | undefined;
       const stream = runAgentWithRetries({
         maxRetries: 2,
-        fingerprints: await deniedFingerprints(database),
+        fingerprints: await deniedFingerprints(database, accessScope),
         onRetry: (attempt, error) => {
           console.error(
             JSON.stringify({

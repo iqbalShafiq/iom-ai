@@ -1,86 +1,106 @@
+import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseServerConfig } from "@iom/config";
 import { createDatabase } from "@iom/database";
 
-const REPO_PDF_NAMES = new Set([
-  "iom-014-2014-kebijakan-cuti-tahunan.pdf",
-  "iom-021-2026-kebijakan-cuti-tahunan.pdf",
-  "iom-028-2026-pedoman-kerja-hibrida.pdf",
-  "iom-033-2026-keamanan-informasi.pdf",
-]);
+const DOCUMENT_JOB_TYPES = [
+  "INGEST_DOCUMENT",
+  "INDEX_VERSION",
+  "ANALYZE_OVERLAP",
+  "EVALUATE_POLICY",
+  "LANGFUSE_SCORE",
+] as const;
 
 export async function resetDevCorpus(
   environment: Record<string, string | undefined> = process.env,
 ) {
   const config = parseServerConfig(environment);
+  if (config.NODE_ENV !== "development") {
+    throw new Error("DEV_CORPUS_RESET_REQUIRES_DEVELOPMENT");
+  }
+
   const database = createDatabase(config.DATABASE_URL);
   try {
-    const files = await database.uploadedFile.findMany({
-      select: { id: true, originalName: true, storageKey: true },
+    const runningJobs = await database.backgroundJob.count({
+      where: { type: { in: [...DOCUMENT_JOB_TYPES] }, status: "RUNNING" },
     });
-    const extra = files.filter((file) => !REPO_PDF_NAMES.has(file.originalName));
-    const extraIds = extra.map((file) => file.id);
+    if (runningJobs > 0) throw new Error("DEV_CORPUS_RESET_HAS_RUNNING_JOBS");
+
+    const [documents, versions, files, conversations, jobs, relations] = await Promise.all([
+      database.iomDocument.count(),
+      database.iomVersion.count(),
+      database.uploadedFile.findMany({ select: { storageKey: true } }),
+      database.conversation.count(),
+      database.backgroundJob.count({ where: { type: { in: [...DOCUMENT_JOB_TYPES] } } }),
+      database.iomRelation.count(),
+    ]);
+    const before = {
+      documents,
+      versions,
+      uploadedFiles: files.length,
+      conversations,
+      jobs,
+      relations,
+    };
+    console.info(JSON.stringify({ phase: "before", counts: before }));
+
+    await database.$transaction(async (transaction) => {
+      await transaction.iomRelation.deleteMany();
+      await transaction.overlapDecision.deleteMany();
+      await transaction.overlapMatch.deleteMany();
+      await transaction.overlapRun.deleteMany();
+      await transaction.confidentialityDecision.deleteMany();
+      await transaction.iomAnnotation.deleteMany();
+      await transaction.iomChunk.deleteMany();
+      await transaction.iomVersion.deleteMany();
+      await transaction.iomDocument.deleteMany();
+      await transaction.uploadedFile.deleteMany();
+      await transaction.uploadBatch.deleteMany();
+      await transaction.conversation.deleteMany();
+      await transaction.backgroundJob.deleteMany({
+        where: { type: { in: [...DOCUMENT_JOB_TYPES] } },
+      });
+      await transaction.auditEvent.create({
+        data: {
+          action: "DEV_CORPUS_RESET",
+          entityType: "DevelopmentCorpus",
+          correlationId: randomUUID(),
+          resultStatus: "SUCCESS",
+          safeMetadata: before,
+        },
+      });
+    });
+
+    const storageRoot = resolve(config.STORAGE_ROOT);
+    await Promise.all(
+      files.map((file) => rm(resolve(storageRoot, file.storageKey), { force: true })),
+    );
+
+    for (const collection of ["iom_employee_active", "iom_hr_active"]) {
+      const response = await fetch(new URL(`/collections/${collection}`, config.QDRANT_URL), {
+        method: "DELETE",
+      });
+      if (!response.ok && response.status !== 404) {
+        throw new Error("DEV_CORPUS_RESET_VECTOR_DELETE_FAILED");
+      }
+    }
+
     console.info(
       JSON.stringify({
-        kept: files
-          .filter((file) => REPO_PDF_NAMES.has(file.originalName))
-          .map((file) => file.originalName),
-        removed: extra.map((file) => file.originalName),
+        phase: "after",
+        counts: {
+          documents: await database.iomDocument.count(),
+          versions: await database.iomVersion.count(),
+          uploadedFiles: await database.uploadedFile.count(),
+          conversations: await database.conversation.count(),
+          jobs: await database.backgroundJob.count({
+            where: { type: { in: [...DOCUMENT_JOB_TYPES] } },
+          }),
+          relations: await database.iomRelation.count(),
+        },
       }),
     );
-    if (extraIds.length > 0) {
-      const versions = await database.iomVersion.findMany({
-        where: { uploadedFileId: { in: extraIds } },
-        select: { id: true, documentId: true },
-      });
-      const versionIds = versions.map((version) => version.id);
-      const documentIds = [...new Set(versions.map((version) => version.documentId))];
-      const matches = await database.overlapMatch.findMany({
-        where: {
-          OR: [
-            { existingVersionId: { in: versionIds } },
-            { run: { candidateVersionId: { in: versionIds } } },
-          ],
-        },
-        select: { id: true },
-      });
-      const matchIds = matches.map((match) => match.id);
-      await database.iomRelation.deleteMany({
-        where: {
-          OR: [{ sourceVersionId: { in: versionIds } }, { targetVersionId: { in: versionIds } }],
-        },
-      });
-      await database.overlapDecision.deleteMany({ where: { matchId: { in: matchIds } } });
-      await database.overlapMatch.deleteMany({ where: { id: { in: matchIds } } });
-      await database.overlapRun.deleteMany({
-        where: { OR: [{ candidateVersionId: { in: versionIds } }] },
-      });
-      await database.confidentialityDecision.deleteMany({
-        where: { chunk: { versionId: { in: versionIds } } },
-      });
-      await database.iomAnnotation.deleteMany({ where: { versionId: { in: versionIds } } });
-      await database.iomChunk.deleteMany({ where: { versionId: { in: versionIds } } });
-      await database.iomVersion.deleteMany({ where: { id: { in: versionIds } } });
-      await database.iomDocument.deleteMany({
-        where: { id: { in: documentIds }, versions: { none: {} } },
-      });
-      await database.uploadedFile.deleteMany({ where: { id: { in: extraIds } } });
-      await database.uploadBatch.deleteMany({ where: { files: { none: {} } } });
-      const storageRoot = resolve(config.STORAGE_ROOT);
-      await Promise.all(
-        extra.map((file) => rm(resolve(storageRoot, file.storageKey), { force: true })),
-      );
-    }
-    await database.backgroundJob.deleteMany({
-      where: {
-        type: { in: ["INGEST_DOCUMENT", "INDEX_VERSION", "ANALYZE_OVERLAP", "EVALUATE_POLICY"] },
-        status: { in: ["QUEUED", "FAILED", "DEAD_LETTER"] },
-      },
-    });
-    for (const collection of ["iom_employee_active", "iom_hr_active"]) {
-      await fetch(new URL(`/collections/${collection}`, config.QDRANT_URL), { method: "DELETE" });
-    }
   } finally {
     await database.$disconnect();
   }
