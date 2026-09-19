@@ -42,7 +42,12 @@ export function createConfidentialityClassifier(
     outputSchema: confidentialityDecisionSchema,
     ...reasoning,
     instructions: `
-Klasifikasikan potongan IOM berdasarkan makna, konteks section, kebijakan HR, contoh, dan marker manual.
+Klasifikasikan potongan IOM berdasarkan makna, konteks section, preferensi akses HR, contoh, dan marker manual.
+Preferensi HR ditulis dalam bahasa natural dan tidak harus menyebut enum atau istilah teknis sistem.
+Petakan pernyataan seperti "hanya HR", "terbatas untuk tim HR", atau "jangan dibagikan ke karyawan" ke HR_ONLY.
+Petakan pernyataan seperti "boleh diketahui seluruh karyawan", "informasi umum", atau "dapat dibagikan" ke EMPLOYEE_SAFE.
+Gunakan NEEDS_REVIEW hanya sebagai status internal ketika preferensi ambigu, konteks tidak cukup, ada konflik, atau confidence rendah.
+Jangan menganggap ketiadaan istilah HR_ONLY, EMPLOYEE_SAFE, atau NEEDS_REVIEW sebagai kekurangan policy.
 Jangan menggunakan daftar kata sebagai aturan deterministik. Kata hanya boleh menjadi salah satu evidence kontekstual.
 Marker CONFIDENTIAL adalah batas keras dan tidak boleh diturunkan.
 Marker EMPLOYEE_SAFE adalah hint; bila bertentangan dengan policy atau konteks, set conflictsWithMarker=true dan NEEDS_REVIEW.

@@ -37,6 +37,26 @@ const reviewSchema = z.object({
     .max(200),
 });
 
+const manualMarkerSchema = z.object({
+  chunkId: z.string().uuid(),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().positive(),
+  category: z.string().trim().min(2).max(80),
+  reason: z.string().trim().min(3).max(2_000),
+});
+
+const revokeMarkerSchema = z.object({
+  reason: z.string().trim().min(3).max(2_000),
+});
+
+const markerEditableStatuses = new Set([
+  "IN_REVIEW",
+  "READY_TO_PUBLISH",
+  "PUBLISHED",
+  "SUPERSEDED",
+  "ARCHIVED",
+]);
+
 const relationSchema = z
   .object({
     targetVersionId: z.string().uuid(),
@@ -371,6 +391,90 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     return context.json({ count: versions.length });
   });
 
+  app.get("/iom/confidentiality-overview", requireHr(), async (context) => {
+    const database = context.get("database");
+    const [pending, restrictedChunks, decisionHistory] = await Promise.all([
+      confidentialityReviewQueue(database),
+      database.iomChunk.findMany({
+        where: { visibility: "HR_ONLY" },
+        orderBy: { updatedAt: "desc" },
+        take: 100,
+        select: {
+          id: true,
+          pageStart: true,
+          section: true,
+          text: true,
+          updatedAt: true,
+          version: { select: { id: true, iomNumber: true, title: true, status: true } },
+          decisions: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: { rationale: true, modelId: true },
+          },
+        },
+      }),
+      database.confidentialityDecision.findMany({
+        where: { reviewedAt: { not: null } },
+        orderBy: { createdAt: "desc" },
+        take: 100,
+        select: {
+          id: true,
+          visibility: true,
+          rationale: true,
+          modelId: true,
+          createdAt: true,
+          reviewedBy: { select: { name: true } },
+          chunk: {
+            select: {
+              pageStart: true,
+              version: { select: { id: true, iomNumber: true, title: true } },
+            },
+          },
+        },
+      }),
+    ]);
+    await audit(database, {
+      actorId: context.get("actor").id,
+      action: "CONFIDENTIALITY_OVERVIEW_VIEW",
+      entityType: "IomVersion",
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      safeMetadata: {
+        pendingCount: pending.length,
+        restrictedCount: restrictedChunks.length,
+        historyCount: decisionHistory.length,
+      },
+    });
+    return context.json({
+      pending,
+      restricted: restrictedChunks.map((chunk) => ({
+        chunkId: chunk.id,
+        versionId: chunk.version.id,
+        iomNumber: chunk.version.iomNumber,
+        title: chunk.version.title,
+        status: chunk.version.status,
+        page: chunk.pageStart,
+        section: chunk.section,
+        excerpt: chunk.text.slice(0, 280),
+        rationale: chunk.decisions[0]?.rationale ?? "Alasan belum tersedia.",
+        source: chunk.decisions[0]?.modelId === "human-review" ? "HR" : "AI",
+        updatedAt: chunk.updatedAt,
+      })),
+      history: decisionHistory.map((decision) => ({
+        id: decision.id,
+        versionId: decision.chunk.version.id,
+        iomNumber: decision.chunk.version.iomNumber,
+        title: decision.chunk.version.title,
+        page: decision.chunk.pageStart,
+        visibility: decision.visibility,
+        rationale: decision.rationale,
+        source: decision.modelId === "human-review" ? "HR" : "AI",
+        actorName: decision.reviewedBy?.name ?? "Sistem",
+        createdAt: decision.createdAt,
+      })),
+    });
+  });
+
   app.get("/iom/:versionId", async (context) => {
     const actor = context.get("actor");
     const version = await context.get("database").iomVersion.findFirst({
@@ -382,9 +486,24 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         chunks: {
           where: actor.role === "HR_ADMIN" ? {} : { visibility: "EMPLOYEE_SAFE" },
           orderBy: { ordinal: "asc" },
-          include: { decisions: { orderBy: { createdAt: "desc" } } },
+          include: {
+            decisions: {
+              orderBy: { createdAt: "desc" },
+              include: {
+                policy: { select: { version: true, name: true } },
+                reviewedBy: { select: { name: true } },
+              },
+            },
+          },
         },
-        annotations: true,
+        annotations: {
+          orderBy: { createdAt: "desc" },
+          include: {
+            createdBy: { select: { name: true } },
+            revokedBy: { select: { name: true } },
+          },
+        },
+        confidentialityPolicy: { select: { id: true, version: true, name: true } },
         outgoingRelations: { include: { targetVersion: true } },
         incomingRelations: { include: { sourceVersion: true } },
         uploadedFile: true,
@@ -393,9 +512,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
     if (!version) return context.json({ error: "IOM tidak ditemukan." }, 404);
     const currentChunks = version.chunks.map((chunk) => ({
       ...chunk,
-      decisions: chunk.decisions
-        .filter((decision) => decision.policyId === version.confidentialityPolicyId)
-        .slice(0, 1),
+      decisions: chunk.decisions,
     }));
     if (actor.role === "EMPLOYEE") {
       void audit(context.get("database"), {
@@ -440,6 +557,7 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
         effectiveFrom: version.effectiveFrom,
         effectiveUntil: version.effectiveUntil,
         confidentialityPolicyId: version.confidentialityPolicyId,
+        confidentialityPolicy: version.confidentialityPolicy,
         metadataConfirmedAt: version.metadataConfirmedAt,
         publishedAt: version.publishedAt,
         chunks: currentChunks.map((chunk) => ({
@@ -461,7 +579,28 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
             sensitiveSpans: decision.sensitiveSpans,
             conflictsWithMarker: decision.conflictsWithMarker,
             modelId: decision.modelId,
+            confidence: decision.confidence,
+            createdAt: decision.createdAt,
+            reviewedByName: decision.reviewedBy?.name ?? null,
+            policyVersion: decision.policy.version,
+            policyName: decision.policy.name,
+            isCurrentPolicy: decision.policyId === version.confidentialityPolicyId,
           })),
+        })),
+        annotations: version.annotations.map((annotation) => ({
+          id: annotation.id,
+          kind: annotation.kind,
+          pageStart: annotation.pageStart,
+          pageEnd: annotation.pageEnd,
+          charStart: annotation.charStart,
+          charEnd: annotation.charEnd,
+          section: annotation.section,
+          note: annotation.note,
+          createdAt: annotation.createdAt,
+          createdByName: annotation.createdBy.name,
+          revokedAt: annotation.revokedAt,
+          revokeReason: annotation.revokeReason,
+          revokedByName: annotation.revokedBy?.name ?? null,
         })),
         outgoingRelations: version.outgoingRelations.map((relation) => ({
           id: relation.id,
@@ -609,6 +748,213 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
       },
     });
   });
+
+  app.post("/iom/:versionId/confidentiality/markers", requireHr(), async (context) => {
+    const parsed = manualMarkerSchema.safeParse(await context.req.json().catch(() => null));
+    if (!parsed.success) return context.json({ error: "Penanda kerahasiaan tidak valid." }, 400);
+    const database = context.get("database");
+    const actor = context.get("actor");
+    const versionId = context.req.param("versionId");
+    const version = await database.iomVersion.findUnique({ where: { id: versionId } });
+    if (!version) return context.json({ error: "IOM tidak ditemukan." }, 404);
+    if (!markerEditableStatuses.has(version.status)) {
+      return context.json(
+        { error: "Penanda hanya dapat diubah setelah teks dokumen selesai diproses." },
+        409,
+      );
+    }
+    if (!version.confidentialityPolicyId) {
+      return context.json({ error: "Kebijakan kerahasiaan aktif belum diterapkan." }, 409);
+    }
+    const chunk = await database.iomChunk.findFirst({
+      where: { id: parsed.data.chunkId, versionId },
+    });
+    if (!chunk || parsed.data.end > chunk.text.length || parsed.data.end <= parsed.data.start) {
+      return context.json({ error: "Bagian teks yang dipilih tidak valid." }, 400);
+    }
+    const reviewedAt = new Date();
+    const selectedText = chunk.text.slice(parsed.data.start, parsed.data.end);
+    const result = await database.$transaction(async (transaction) => {
+      const annotation = await transaction.iomAnnotation.create({
+        data: {
+          versionId,
+          createdById: actor.id,
+          kind: "CONFIDENTIAL",
+          pageStart: chunk.pageStart,
+          pageEnd: chunk.pageEnd,
+          charStart: parsed.data.start,
+          charEnd: parsed.data.end,
+          section: chunk.section,
+          note: parsed.data.reason,
+        },
+      });
+      const decision = await transaction.confidentialityDecision.create({
+        data: {
+          chunkId: chunk.id,
+          policyId: version.confidentialityPolicyId ?? "",
+          visibility: "HR_ONLY",
+          confidence: 1,
+          categories: ["HR_MANUAL_MARKER", parsed.data.category],
+          rationale: parsed.data.reason,
+          sensitiveSpans: [
+            { start: parsed.data.start, end: parsed.data.end, reason: parsed.data.reason },
+          ],
+          conflictsWithMarker: false,
+          modelId: "human-review",
+          reviewedById: actor.id,
+          reviewedAt,
+        },
+      });
+      await transaction.iomChunk.update({
+        where: { id: chunk.id },
+        data: { visibility: "HR_ONLY", publicText: null },
+      });
+      await transaction.iomVersion.update({
+        where: { id: versionId },
+        data: { reviewedById: actor.id },
+      });
+      return { annotation, decision };
+    });
+    await refreshIomPublishReadiness(database, versionId);
+    await audit(database, {
+      actorId: actor.id,
+      action: "CONFIDENTIALITY_MARKER_CREATE",
+      entityType: "IomAnnotation",
+      entityId: result.annotation.id,
+      correlationId: context.get("correlationId"),
+      resultStatus: "SUCCESS",
+      safeMetadata: {
+        versionId,
+        chunkId: chunk.id,
+        page: chunk.pageStart,
+        selectedCharacters: selectedText.length,
+        category: parsed.data.category,
+      },
+    });
+    return context.json(
+      { annotationId: result.annotation.id, decisionId: result.decision.id },
+      201,
+    );
+  });
+
+  app.post(
+    "/iom/:versionId/confidentiality/markers/:annotationId/revoke",
+    requireHr(),
+    async (context) => {
+      const parsed = revokeMarkerSchema.safeParse(await context.req.json().catch(() => null));
+      if (!parsed.success) return context.json({ error: "Alasan pencabutan tidak valid." }, 400);
+      const database = context.get("database");
+      const actor = context.get("actor");
+      const versionId = context.req.param("versionId");
+      const marker = await database.iomAnnotation.findFirst({
+        where: {
+          id: context.req.param("annotationId"),
+          versionId,
+          kind: "CONFIDENTIAL",
+          revokedAt: null,
+        },
+        include: { version: true },
+      });
+      if (!marker) return context.json({ error: "Penanda aktif tidak ditemukan." }, 404);
+      if (!markerEditableStatuses.has(marker.version.status)) {
+        return context.json(
+          { error: "Penanda belum dapat dicabut sebelum teks dokumen selesai diproses." },
+          409,
+        );
+      }
+      if (!marker.version.confidentialityPolicyId) {
+        return context.json({ error: "Kebijakan kerahasiaan aktif belum diterapkan." }, 409);
+      }
+      const chunks = await database.iomChunk.findMany({ where: { versionId } });
+      const chunk = chunks.find((candidate) => relevantAnnotations([marker], candidate).length > 0);
+      if (!chunk)
+        return context.json({ error: "Bagian dokumen untuk penanda tidak ditemukan." }, 409);
+      const otherMarkers = await database.iomAnnotation.findMany({
+        where: {
+          versionId,
+          kind: "CONFIDENTIAL",
+          revokedAt: null,
+          id: { not: marker.id },
+        },
+      });
+      const remainingMarkers = relevantAnnotations(otherMarkers, chunk);
+      const previousDecisions = await database.confidentialityDecision.findMany({
+        where: {
+          chunkId: chunk.id,
+          policyId: marker.version.confidentialityPolicyId,
+        },
+        orderBy: { createdAt: "desc" },
+        select: { visibility: true, modelId: true, categories: true },
+      });
+      const previousDecision = previousDecisions.find((decision) => {
+        if (decision.modelId !== "human-review" || !Array.isArray(decision.categories)) {
+          return true;
+        }
+        return !decision.categories.some(
+          (category) => category === "HR_MANUAL_MARKER" || category === "HR_MANUAL_MARKER_REVOKED",
+        );
+      });
+      const restoredVisibility =
+        previousDecision?.visibility === "EMPLOYEE_SAFE" ||
+        previousDecision?.visibility === "HR_ONLY"
+          ? previousDecision.visibility
+          : "NEEDS_REVIEW";
+      const visibility = remainingMarkers.length > 0 ? "HR_ONLY" : restoredVisibility;
+      const reviewedAt = new Date();
+      await database.$transaction(async (transaction) => {
+        await transaction.iomAnnotation.update({
+          where: { id: marker.id },
+          data: { revokedAt: reviewedAt, revokedById: actor.id, revokeReason: parsed.data.reason },
+        });
+        await transaction.iomChunk.update({
+          where: { id: chunk.id },
+          data: {
+            visibility,
+            publicText: visibility === "EMPLOYEE_SAFE" ? chunk.text : null,
+          },
+        });
+        await transaction.confidentialityDecision.create({
+          data: {
+            chunkId: chunk.id,
+            policyId: marker.version.confidentialityPolicyId ?? "",
+            visibility,
+            confidence: 1,
+            categories: ["HR_MANUAL_MARKER_REVOKED"],
+            rationale:
+              visibility === "HR_ONLY"
+                ? `${parsed.data.reason} Penanda rahasia lain masih berlaku pada halaman ini.`
+                : `${parsed.data.reason} Halaman dikembalikan untuk ditinjau ulang.`,
+            sensitiveSpans: remainingMarkers.flatMap((remaining) =>
+              remaining.charStart !== null && remaining.charEnd !== null
+                ? [
+                    {
+                      start: remaining.charStart,
+                      end: remaining.charEnd,
+                      reason: remaining.note ?? "Penanda manual HR",
+                    },
+                  ]
+                : [],
+            ),
+            conflictsWithMarker: false,
+            modelId: "human-review",
+            reviewedById: actor.id,
+            reviewedAt,
+          },
+        });
+      });
+      await refreshIomPublishReadiness(database, versionId);
+      await audit(database, {
+        actorId: actor.id,
+        action: "CONFIDENTIALITY_MARKER_REVOKE",
+        entityType: "IomAnnotation",
+        entityId: marker.id,
+        correlationId: context.get("correlationId"),
+        resultStatus: "SUCCESS",
+        safeMetadata: { versionId, chunkId: chunk.id, resultingVisibility: visibility },
+      });
+      return context.json({ visibility });
+    },
+  );
 
   app.post("/iom/:versionId/review", requireHr(), async (context) => {
     const parsed = reviewSchema.safeParse(await context.req.json().catch(() => null));

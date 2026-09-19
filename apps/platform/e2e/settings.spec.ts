@@ -73,7 +73,7 @@ test("settings uses tabs and pre-fills the latest HR preference", async ({ page 
   const draftTab = tabs.getByRole("tab", { name: "Draft kebijakan" });
   const historyTab = tabs.getByRole("tab", { name: "Riwayat kebijakan" });
   await expect(draftTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByLabel("Instruksi global")).toHaveValue(latestInstructions);
+  await expect(page.getByLabel("Preferensi akses dokumen")).toHaveValue(latestInstructions);
   await expect(page.getByLabel("Nama policy")).toHaveCount(0);
   await expect(page.locator(".policy-editor__source small")).toHaveText("Terakhir diupdate pada");
   await expect(page.locator(".policy-editor__source time")).toHaveText("2026-09-16 08:00 WIB");
@@ -96,5 +96,5 @@ test("settings uses tabs and pre-fills the latest HR preference", async ({ page 
 
   await draftTab.click();
   await expect(draftTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByLabel("Instruksi global")).toHaveValue(latestInstructions);
+  await expect(page.getByLabel("Preferensi akses dokumen")).toHaveValue(latestInstructions);
 });

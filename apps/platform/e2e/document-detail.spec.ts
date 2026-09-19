@@ -25,6 +25,12 @@ test.beforeEach(async ({ page }) => {
             revision: 3,
             status: "IN_REVIEW",
             effectiveFrom: "2026-09-12T00:00:00.000Z",
+            confidentialityPolicy: {
+              id: "11111111-1111-4111-8111-111111111111",
+              version: 4,
+              name: "Preferensi HR",
+            },
+            annotations: [],
             chunks: [
               {
                 id: "chunk-1",
@@ -36,10 +42,18 @@ test.beforeEach(async ({ page }) => {
                 decisions: [
                   {
                     id: "decision-1",
+                    visibility: "EMPLOYEE_SAFE",
+                    confidence: 0.99,
                     rationale: "Aman untuk employee.",
                     reviewedAt: null,
+                    createdAt: "2026-09-12T01:00:00.000Z",
                     categories: [],
                     sensitiveSpans: [],
+                    modelId: "gpt-5.6-luna",
+                    reviewedByName: null,
+                    policyVersion: 4,
+                    policyName: "Preferensi HR",
+                    isCurrentPolicy: true,
                   },
                 ],
               },
@@ -84,7 +98,7 @@ test("document detail uses compact metadata header and fullscreen review workspa
   await expect(page.locator(".ui-hover-stat").nth(0)).toContainText("12 Sep 2026");
   await expect(page.locator(".ui-hover-stat").nth(1)).toContainText("R3");
   await expect(page.getByRole("tablist", { name: "Bagian dokumen" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Review 1" })).toHaveAttribute(
+  await expect(page.getByRole("tab", { name: "Kerahasiaan 1" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
@@ -100,7 +114,7 @@ test("document detail uses compact metadata header and fullscreen review workspa
   await page.getByRole("button", { name: "Buka preview dan review layar penuh" }).click();
   const dialog = page.getByRole("dialog", { name: "Preview dan review dokumen" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByText("AI + HR REVIEW")).toBeVisible();
+  await expect(dialog.getByText("REVIEW KERAHASIAAN")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Tutup layar penuh" })).toBeVisible();
   await dialog.getByRole("button", { name: "Tutup layar penuh" }).click();
   await expect(dialog).not.toBeVisible();

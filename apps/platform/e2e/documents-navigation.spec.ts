@@ -21,8 +21,8 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: { count: 5 } });
       return;
     }
-    if (pathname === "/iom/reviews") {
-      await route.fulfill({ json: { versions: [] } });
+    if (pathname === "/iom/confidentiality-overview") {
+      await route.fulfill({ json: { pending: [], restricted: [], history: [] } });
       return;
     }
     if (pathname === "/overlap/runs") {
@@ -56,7 +56,7 @@ test("document tools use nested navigation and routes", async ({ page }) => {
 
   await navigation.getByRole("link", { name: "Confidentiality" }).click();
   await expect(page).toHaveURL(/\/hr\/documents\/confidentiality$/);
-  await expect(page.getByRole("heading", { name: "Review kerahasiaan" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Kerahasiaan dokumen" })).toBeVisible();
 
   await navigation.getByRole("link", { name: "Overlap" }).click();
   await expect(page).toHaveURL(/\/hr\/documents\/overlap$/);

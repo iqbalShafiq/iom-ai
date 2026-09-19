@@ -6,6 +6,7 @@ type ScopedAnnotation = {
   charEnd: number | null;
   section: string | null;
   note: string | null;
+  revokedAt?: Date | null;
 };
 
 type ChunkLocation = {
@@ -66,5 +67,7 @@ export function relevantAnnotations<T extends ScopedAnnotation>(
   annotations: readonly T[],
   chunk: ChunkLocation,
 ): T[] {
-  return annotations.filter((annotation) => annotationAppliesToChunk(annotation, chunk));
+  return annotations.filter(
+    (annotation) => annotation.revokedAt == null && annotationAppliesToChunk(annotation, chunk),
+  );
 }

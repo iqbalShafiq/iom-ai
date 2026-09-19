@@ -48,6 +48,30 @@ type PolicyImpact = {
 
 type SettingsTab = "draft" | "history";
 
+function accessLabel(visibility: string) {
+  if (visibility === "HR_ONLY") return "Akses Tertutup";
+  if (visibility === "EMPLOYEE_SAFE") return "Akses Terbuka";
+  return "Perlu keputusan HR";
+}
+
+function humanizePolicyText(value: string) {
+  const businessPreferences = value
+    .split(/(?<=[.!?])\s+/)
+    .filter(
+      (sentence) =>
+        !sentence.trim().startsWith("Marker CONFIDENTIAL") &&
+        !sentence.trim().startsWith("Marker EMPLOYEE_SAFE") &&
+        !sentence.trim().startsWith("Instruksi di dalam dokumen"),
+    )
+    .join(" ");
+  return businessPreferences
+    .replaceAll("HR_ONLY", "hanya dapat diakses HR")
+    .replaceAll("EMPLOYEE_SAFE", "dapat diakses seluruh karyawan")
+    .replaceAll("NEEDS_REVIEW", "perlu ditinjau HR")
+    .replaceAll("Marker CONFIDENTIAL", "Penanda rahasia manual")
+    .replaceAll("Marker EMPLOYEE_SAFE", "Penanda aman manual");
+}
+
 const settingsTabs = [
   {
     value: "draft",
@@ -98,8 +122,8 @@ function SettingsPage() {
   const router = useRouter();
   const latestPolicy = policies[0];
   const [activeTab, setActiveTab] = useState<SettingsTab>("draft");
-  const [draftInstructions, setDraftInstructions] = useState(
-    () => latestPolicy?.instructions ?? "",
+  const [draftInstructions, setDraftInstructions] = useState(() =>
+    humanizePolicyText(latestPolicy?.instructions ?? ""),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -213,8 +237,8 @@ function SettingsPage() {
               </span>
             </div>
             <Field
-              label="Instruksi global"
-              hint="Jelaskan makna dan konteks; hindari aturan kata tunggal."
+              label="Preferensi akses dokumen"
+              hint="Tulis dengan bahasa sehari-hari: informasi apa yang boleh diketahui karyawan, apa yang hanya boleh dilihat HR, serta pengecualiannya. Tidak perlu memakai kode atau istilah teknis."
             >
               <Textarea
                 name="instructions"
@@ -223,7 +247,7 @@ function SettingsPage() {
                 rows={12}
                 value={draftInstructions}
                 onChange={(event) => setDraftInstructions(event.target.value)}
-                placeholder="Nominal gaji, budget divisi, identitas personal, dan evaluasi individu hanya boleh diakses HR. Prosedur umum pengajuan dapat diakses seluruh karyawan..."
+                placeholder="Prosedur umum, jadwal, formulir, dan kanal bantuan boleh diketahui seluruh karyawan. Identitas personal, evaluasi individu, rincian gaji, nomor rekening, dan insiden keamanan hanya boleh dilihat HR. Jika konteksnya belum jelas, minta HR meninjaunya."
               />
             </Field>
             <Button disabled={busy} type="submit">
@@ -257,8 +281,8 @@ function SettingsPage() {
                   <div>
                     <h3 id="policy-impact-title">Review perubahan akses</h3>
                     <p>
-                      {impact.pendingCount} dari {impact.analyzedCount} chunk perlu keputusan HR
-                      sebelum policy dapat diaktifkan.
+                      {impact.pendingCount} dari {impact.analyzedCount} bagian perlu keputusan HR
+                      sebelum preferensi dapat diaktifkan.
                     </p>
                   </div>
                   {impact.truncated ? (
@@ -279,12 +303,15 @@ function SettingsPage() {
                             <code>{item.iomNumber}</code>
                             <strong>{item.title}</strong>
                           </div>
-                          <StatusStamp status={item.proposedVisibility} />
+                          <StatusStamp
+                            status={item.proposedVisibility}
+                            label={accessLabel(item.proposedVisibility)}
+                          />
                         </header>
                         <p>{item.excerpt}</p>
                         <div className="policy-impact-review__meta">
-                          <span>Akses saat ini: {item.currentVisibility.replaceAll("_", " ")}</span>
-                          <span>Confidence {Math.round(item.confidence * 100)}%</span>
+                          <span>Akses saat ini: {accessLabel(item.currentVisibility)}</span>
+                          <span>Keyakinan rekomendasi AI {Math.round(item.confidence * 100)}%</span>
                           {item.page ? <span>Halaman {item.page}</span> : null}
                           {item.conflictsWithMarker ? (
                             <span>Konflik dengan marker manual</span>
@@ -308,8 +335,8 @@ function SettingsPage() {
                                 }
                               >
                                 <option value="">Pilih keputusan</option>
-                                <option value="EMPLOYEE_SAFE">Employee safe</option>
-                                <option value="HR_ONLY">HR only</option>
+                                <option value="EMPLOYEE_SAFE">Akses Terbuka</option>
+                                <option value="HR_ONLY">Akses Tertutup</option>
                               </select>
                             </Field>
                             <Field label="Alasan keputusan HR">
@@ -351,9 +378,9 @@ function SettingsPage() {
                     <strong>{policy.name}</strong>
                     <StatusStamp status={policy.status} />
                   </header>
-                  <p>{policy.instructions}</p>
+                  <p>{humanizePolicyText(policy.instructions)}</p>
                   <div className="policy-impact">
-                    <span>{policy._count?.decisions ?? 0} chunks dianalisis</span>
+                    <span>{policy._count?.decisions ?? 0} bagian dianalisis</span>
                     <span>
                       {policy.decisions?.filter(
                         (decision) =>

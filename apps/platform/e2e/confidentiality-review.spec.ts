@@ -17,10 +17,10 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ json: { count: 1 } });
       return;
     }
-    if (pathname === "/iom/reviews") {
+    if (pathname === "/iom/confidentiality-overview") {
       await route.fulfill({
         json: {
-          versions: [
+          pending: [
             {
               id: "pending-version",
               iomNumber: "IOM-030/2026",
@@ -30,6 +30,8 @@ test.beforeEach(async ({ page }) => {
               effectiveFrom: "2026-09-17T00:00:00.000Z",
             },
           ],
+          restricted: [],
+          history: [],
         },
       });
       return;
@@ -45,7 +47,9 @@ test.beforeEach(async ({ page }) => {
 test("shows only versions returned by the confidentiality review queue", async ({ page }) => {
   await page.goto("/hr/documents/confidentiality");
 
-  await expect(page.getByRole("heading", { name: "Review kerahasiaan" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Kerahasiaan dokumen" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Perlu ditinjau 1" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Akses terbatas 0" })).toBeVisible();
   await expect(page.getByText("Masih perlu konfirmasi")).toBeVisible();
   await expect(page.getByText("Sudah dikonfirmasi")).toHaveCount(0);
 });

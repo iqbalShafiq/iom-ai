@@ -117,7 +117,9 @@ model User {
   sessions     AuthSession[]
   conversations Conversation[]
   uploadBatches UploadBatch[]
-  annotations  IomAnnotation[]
+  annotationsCreated IomAnnotation[] @relation("AnnotationCreator")
+  annotationsRevoked IomAnnotation[] @relation("AnnotationRevoker")
+  confidentialityReviews ConfidentialityDecision[] @relation("ConfidentialityReviewer")
   auditEvents  AuditEvent[]
   noMatchConfirmedRuns OverlapRun[] @relation("OverlapNoMatchConfirmer")
   overlapDecisions OverlapDecision[] @relation("OverlapDecisionDecider")
@@ -318,11 +320,16 @@ model IomAnnotation {
   charEnd     Int?
   section     String?
   note        String?
+  revokedById String?        @db.Uuid
+  revokedAt   DateTime?
+  revokeReason String?
   createdAt   DateTime       @default(now())
   version     IomVersion     @relation(fields: [versionId], references: [id], onDelete: Cascade)
-  createdBy   User           @relation(fields: [createdById], references: [id])
+  createdBy   User           @relation("AnnotationCreator", fields: [createdById], references: [id])
+  revokedBy   User?          @relation("AnnotationRevoker", fields: [revokedById], references: [id])
 
   @@index([versionId, pageStart])
+  @@index([versionId, revokedAt])
 }
 
 model ConfidentialityPolicy {
@@ -358,6 +365,7 @@ model ConfidentialityDecision {
   createdAt           DateTime    @default(now())
   chunk               IomChunk    @relation(fields: [chunkId], references: [id], onDelete: Cascade)
   policy              ConfidentialityPolicy @relation(fields: [policyId], references: [id])
+  reviewedBy          User?       @relation("ConfidentialityReviewer", fields: [reviewedById], references: [id])
 
   @@index([chunkId, createdAt])
 }

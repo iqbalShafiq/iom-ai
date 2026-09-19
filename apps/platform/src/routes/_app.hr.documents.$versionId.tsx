@@ -20,13 +20,18 @@ import {
   ArrowsOut,
   Calendar,
   Check,
+  ClockCounterClockwise,
   EyeSlash,
   FilePdf,
   GitBranch,
+  LockKey,
+  Selection,
+  ShieldCheck,
   Warning,
 } from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type SyntheticEvent, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch, apiUrl } from "@/lib/api";
 import type { IomVersionRow } from "@/lib/types";
 
@@ -48,6 +53,32 @@ export const Route = createFileRoute("/_app/hr/documents/$versionId")({
 type ReviewChoice = "EMPLOYEE_SAFE" | "HR_ONLY";
 type DetailTab = "review" | "metadata" | "relations";
 type IomChunk = NonNullable<IomVersionRow["chunks"]>[number];
+type MarkerSelection = {
+  chunkId: string;
+  start: number;
+  end: number;
+  text: string;
+  anchor?: {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  };
+};
+
+function visibilityLabel(visibility: string) {
+  if (visibility === "HR_ONLY") return "Akses Terbatas";
+  if (visibility === "EMPLOYEE_SAFE") return "Akses Tertutup";
+  return "Perlu keputusan HR";
+}
+
+function formatDecisionTimestamp(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(new Date(value));
+}
 
 function splitFileName(fileName: string) {
   const extensionStart = fileName.lastIndexOf(".");
@@ -195,11 +226,15 @@ function VersionTimelineItem({
 }
 
 function MarkedText({
+  chunkId,
   text,
   spans,
+  onSelect,
 }: {
+  chunkId: string;
   text: string;
   spans: Array<{ start: number; end: number; reason: string }>;
+  onSelect(selection: MarkerSelection): void;
 }) {
   const segments = useMemo(() => {
     const valid = spans
@@ -232,18 +267,56 @@ function MarkedText({
     }
     return result;
   }, [text, spans]);
+  function captureSelection(event: SyntheticEvent<HTMLParagraphElement>) {
+    const container = event.currentTarget;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (!container.contains(range.commonAncestorContainer)) return;
+    const prefix = document.createRange();
+    prefix.selectNodeContents(container);
+    prefix.setEnd(range.startContainer, range.startOffset);
+    const start = prefix.toString().length;
+    const selectedText = range.toString();
+    const end = start + selectedText.length;
+    if (!selectedText.trim() || end <= start) return;
+    const bounds = range.getBoundingClientRect();
+    onSelect({
+      chunkId,
+      start,
+      end,
+      text: selectedText,
+      anchor: {
+        top: bounds.top,
+        bottom: bounds.bottom,
+        left: bounds.left,
+        right: bounds.right,
+      },
+    });
+  }
+
   return (
-    <p className="chunk-text">
-      {segments.map((segment) =>
-        segment.sensitive ? (
-          <mark key={segment.key} title={segment.reason}>
-            {segment.text}
-          </mark>
-        ) : (
-          <span key={segment.key}>{segment.text}</span>
-        ),
-      )}
-    </p>
+    <div className="chunk-copy">
+      <p className="chunk-text" onMouseUp={captureSelection} onKeyUp={captureSelection}>
+        {segments.map((segment) =>
+          segment.sensitive ? (
+            <mark key={segment.key}>{segment.text}</mark>
+          ) : (
+            <span key={segment.key}>{segment.text}</span>
+          ),
+        )}
+      </p>
+      {spans.length > 0 ? (
+        <ul className="sensitive-evidence" aria-label="Alasan bagian sensitif">
+          {spans.map((span) => (
+            <li key={`${span.start}:${span.end}:${span.reason}`}>
+              <LockKey weight="bold" />
+              <span>{span.reason}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -258,7 +331,102 @@ type ReviewWorkspaceProps = {
   onConfirmAiDecisions(): void;
   onSelectChoice(chunkId: string, choice: ReviewChoice): void;
   onChangeNote(chunkId: string, note: string): void;
+  onCreateMarker(selection: MarkerSelection, category: string, reason: string): Promise<boolean>;
+  onRevokeMarker(annotationId: string, reason: string): Promise<boolean>;
 };
+
+function markerAppliesToChunk(
+  marker: NonNullable<IomVersionRow["annotations"]>[number],
+  chunk: IomChunk,
+) {
+  if (marker.pageStart == null && marker.pageEnd == null && !marker.section) return true;
+  if (marker.pageStart != null && chunk.pageStart !== marker.pageStart) return false;
+  if (marker.section && marker.section !== chunk.section) return false;
+  return true;
+}
+
+function SelectionPopover({
+  selection,
+  category,
+  reason,
+  busy,
+  onChangeCategory,
+  onChangeReason,
+  onCancel,
+  onSubmit,
+}: {
+  selection: MarkerSelection;
+  category: string;
+  reason: string;
+  busy: boolean;
+  onChangeCategory(value: string): void;
+  onChangeReason(value: string): void;
+  onCancel(): void;
+  onSubmit(): void;
+}) {
+  const anchor = selection.anchor;
+  const compactWidth = 320;
+  const viewportGap = 12;
+  const popoverGap = 8;
+  const estimatedHeight = 300;
+  const style =
+    anchor && typeof window !== "undefined"
+      ? {
+          top:
+            anchor.bottom + estimatedHeight + viewportGap <= window.innerHeight
+              ? anchor.bottom + popoverGap
+              : Math.max(viewportGap, anchor.top - estimatedHeight - popoverGap),
+          left: Math.min(
+            Math.max(viewportGap, anchor.left),
+            Math.max(viewportGap, window.innerWidth - compactWidth - viewportGap),
+          ),
+          width: `min(${compactWidth}px, calc(100vw - ${viewportGap * 2}px))`,
+        }
+      : undefined;
+  const content = (
+    <div
+      className={`selection-popover${anchor ? " selection-popover--floating" : ""}`}
+      role="dialog"
+      aria-label="Tambah penanda rahasia"
+      style={style}
+    >
+      <div className="selection-popover__preview">
+        <Selection weight="bold" />
+        <span>“{selection.text.trim().slice(0, 180)}”</span>
+      </div>
+      <p>Bagian terpilih akan membuat chunk ini hanya dapat diakses HR.</p>
+      <Field label="Kategori">
+        <Input
+          value={category}
+          onChange={(event) => onChangeCategory(event.target.value)}
+          placeholder="Contoh: Data personal"
+        />
+      </Field>
+      <Field label="Alasan HR">
+        <textarea
+          rows={3}
+          value={reason}
+          onChange={(event) => onChangeReason(event.target.value)}
+          placeholder="Mengapa bagian ini dibatasi?"
+        />
+      </Field>
+      <div className="selection-popover__actions">
+        <Button variant="neutral" type="button" onClick={onCancel}>
+          Batal
+        </Button>
+        <Button
+          type="button"
+          disabled={busy || category.trim().length < 2 || reason.trim().length < 3}
+          onClick={onSubmit}
+        >
+          <LockKey weight="bold" /> Tandai rahasia
+        </Button>
+      </div>
+    </div>
+  );
+  if (!anchor || typeof document === "undefined") return content;
+  return createPortal(content, document.body);
+}
 
 function ReviewWorkspace({
   version,
@@ -271,7 +439,14 @@ function ReviewWorkspace({
   onConfirmAiDecisions,
   onSelectChoice,
   onChangeNote,
+  onCreateMarker,
+  onRevokeMarker,
 }: ReviewWorkspaceProps) {
+  const [selection, setSelection] = useState<MarkerSelection | null>(null);
+  const [markerCategory, setMarkerCategory] = useState("");
+  const [markerReason, setMarkerReason] = useState("");
+  const [revokingMarkerId, setRevokingMarkerId] = useState<string | null>(null);
+  const [revokeReason, setRevokeReason] = useState("");
   const focusedChunk = focusPage
     ? version.chunks?.find((chunk) => chunk.pageStart === focusPage)
     : undefined;
@@ -286,6 +461,32 @@ function ReviewWorkspace({
     element?.scrollIntoView({ block: "start", behavior });
     element?.focus({ preventScroll: true });
   }, [focusedChunk, focusPage]);
+  const reviewMutable = version.status === "IN_REVIEW" || version.status === "READY_TO_PUBLISH";
+  const markerMutable = [
+    "IN_REVIEW",
+    "READY_TO_PUBLISH",
+    "PUBLISHED",
+    "SUPERSEDED",
+    "ARCHIVED",
+  ].includes(version.status);
+
+  async function createMarker() {
+    if (!selection || markerCategory.trim().length < 2 || markerReason.trim().length < 3) return;
+    if (await onCreateMarker(selection, markerCategory.trim(), markerReason.trim())) {
+      setSelection(null);
+      setMarkerCategory("");
+      setMarkerReason("");
+      window.getSelection()?.removeAllRanges();
+    }
+  }
+
+  async function revokeMarker(annotationId: string) {
+    if (revokeReason.trim().length < 3) return;
+    if (await onRevokeMarker(annotationId, revokeReason.trim())) {
+      setRevokingMarkerId(null);
+      setRevokeReason("");
+    }
+  }
 
   return (
     <div className="review-split">
@@ -302,12 +503,39 @@ function ReviewWorkspace({
       </section>
       <section className="review-panel" aria-label="AI dan HR review">
         <header className="review-panel__head">
-          <span>AI + HR REVIEW</span>
+          <span>REVIEW KERAHASIAAN</span>
           <div className="review-panel__head-actions">
             <strong>{version.chunks?.length ?? 0} chunks</strong>
           </div>
         </header>
         <div className="review-panel__body">
+          <section className="confidentiality-summary" aria-label="Ringkasan akses dokumen">
+            <span>
+              <strong>
+                {version.chunks?.filter((chunk) => chunk.visibility === "EMPLOYEE_SAFE").length ??
+                  0}
+              </strong>
+              Akses Terbuka
+            </span>
+            <span>
+              <strong>
+                {version.chunks?.filter((chunk) => chunk.visibility === "HR_ONLY").length ?? 0}
+              </strong>
+              Hanya HR
+            </span>
+            <span>
+              <strong>{unresolved.length}</strong>
+              Perlu keputusan
+            </span>
+            <span>
+              Preferensi HR{" "}
+              <strong>
+                {version.confidentialityPolicy
+                  ? `v${version.confidentialityPolicy.version}`
+                  : "belum tersedia"}
+              </strong>
+            </span>
+          </section>
           {focusPage && !focusedChunk ? (
             <div className="form-alert" role="status">
               Halaman sumber {focusPage} tidak tersedia pada versi dokumen ini. Menampilkan review
@@ -327,7 +555,8 @@ function ReviewWorkspace({
             </div>
           ) : null}
           {version.chunks?.map((chunk) => {
-            const decision = chunk.decisions[0];
+            const decision =
+              chunk.decisions.find((item) => item.isCurrentPolicy) ?? chunk.decisions[0];
             const selected =
               choices[chunk.id] ??
               (chunk.visibility === "NEEDS_REVIEW"
@@ -346,42 +575,187 @@ function ReviewWorkspace({
                     CHUNK {String(chunk.ordinal + 1).padStart(2, "0")} / PAGE{" "}
                     {chunk.pageStart ?? "—"}
                   </span>
-                  <StatusStamp status={chunk.visibility} />
+                  <StatusStamp
+                    status={chunk.visibility}
+                    label={visibilityLabel(chunk.visibility)}
+                  />
                 </header>
-                <MarkedText text={chunk.text} spans={decision?.sensitiveSpans ?? []} />
+                <MarkedText
+                  chunkId={chunk.id}
+                  text={chunk.text}
+                  spans={decision?.sensitiveSpans ?? []}
+                  onSelect={setSelection}
+                />
+                {markerMutable && selection?.chunkId === chunk.id ? (
+                  <SelectionPopover
+                    selection={selection}
+                    category={markerCategory}
+                    reason={markerReason}
+                    busy={busy}
+                    onChangeCategory={setMarkerCategory}
+                    onChangeReason={setMarkerReason}
+                    onCancel={() => setSelection(null)}
+                    onSubmit={() => void createMarker()}
+                  />
+                ) : null}
                 <div className="ai-rationale">
                   <strong>
-                    {decision?.modelId === "human-review" ? "Alasan keputusan HR" : "Alasan AI"}
+                    {decision?.modelId === "human-review"
+                      ? "Keputusan HR saat ini"
+                      : "Rekomendasi AI saat ini"}
                   </strong>
                   <p>{decision?.rationale ?? "Klasifikasi belum tersedia."}</p>
-                  <span>Confidence {Math.round((chunk.classificationConfidence ?? 0) * 100)}%</span>
+                  <div className="decision-provenance">
+                    {decision?.modelId === "human-review" ? (
+                      <span>
+                        <ShieldCheck weight="bold" /> Diputuskan oleh{" "}
+                        {decision.reviewedByName ?? "HR"}
+                      </span>
+                    ) : (
+                      <span>
+                        Keyakinan rekomendasi AI {Math.round((decision?.confidence ?? 0) * 100)}%
+                      </span>
+                    )}
+                    {version.confidentialityPolicy ? (
+                      <span>Preferensi HR v{version.confidentialityPolicy.version}</span>
+                    ) : null}
+                  </div>
                 </div>
-                {chunk.visibility === "NEEDS_REVIEW" ? (
+                {reviewMutable || markerMutable ? (
                   <div className="decision-controls">
-                    <div>
-                      <button
-                        type="button"
-                        data-selected={selected === "EMPLOYEE_SAFE"}
-                        onClick={() => onSelectChoice(chunk.id, "EMPLOYEE_SAFE")}
-                      >
-                        Employee safe
-                      </button>
-                      <button
-                        type="button"
-                        data-selected={selected === "HR_ONLY"}
-                        onClick={() => onSelectChoice(chunk.id, "HR_ONLY")}
-                      >
-                        HR only
-                      </button>
-                    </div>
-                    <textarea
-                      aria-label={`Alasan chunk ${chunk.ordinal + 1}`}
-                      placeholder="Alasan keputusan HR"
-                      value={notes[chunk.id] ?? ""}
-                      onChange={(event) => onChangeNote(chunk.id, event.target.value)}
-                    />
+                    {reviewMutable ? (
+                      <>
+                        <div>
+                          <button
+                            type="button"
+                            data-selected={selected === "EMPLOYEE_SAFE"}
+                            onClick={() => onSelectChoice(chunk.id, "EMPLOYEE_SAFE")}
+                          >
+                            Akses Terbuka
+                          </button>
+                          <button
+                            type="button"
+                            data-selected={selected === "HR_ONLY"}
+                            onClick={() => onSelectChoice(chunk.id, "HR_ONLY")}
+                          >
+                            Hanya HR
+                          </button>
+                        </div>
+                        <textarea
+                          aria-label={`Alasan chunk ${chunk.ordinal + 1}`}
+                          placeholder="Alasan keputusan HR"
+                          value={notes[chunk.id] ?? ""}
+                          onChange={(event) => onChangeNote(chunk.id, event.target.value)}
+                        />
+                      </>
+                    ) : null}
+                    <Button
+                      variant="neutral"
+                      type="button"
+                      onClick={(event) => {
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        setSelection({
+                          chunkId: chunk.id,
+                          start: 0,
+                          end: chunk.text.length,
+                          text: `Seluruh halaman ${chunk.pageStart ?? chunk.ordinal + 1}`,
+                          anchor: {
+                            top: bounds.top,
+                            bottom: bounds.bottom,
+                            left: bounds.left,
+                            right: bounds.right,
+                          },
+                        });
+                      }}
+                    >
+                      <LockKey weight="bold" /> Tandai seluruh halaman
+                    </Button>
                   </div>
                 ) : null}
+                {version.annotations
+                  ?.filter(
+                    (marker) =>
+                      marker.kind === "CONFIDENTIAL" &&
+                      !marker.revokedAt &&
+                      markerAppliesToChunk(marker, chunk),
+                  )
+                  .map((marker) => (
+                    <div className="manual-marker" key={marker.id}>
+                      <div>
+                        <LockKey weight="bold" />
+                        <span>
+                          <strong>Penanda manual oleh {marker.createdByName}</strong>
+                          <small>{marker.note ?? "Tanpa alasan"}</small>
+                        </span>
+                      </div>
+                      {markerMutable && revokingMarkerId !== marker.id ? (
+                        <Button
+                          variant="neutral"
+                          type="button"
+                          onClick={() => setRevokingMarkerId(marker.id)}
+                        >
+                          Cabut penanda
+                        </Button>
+                      ) : null}
+                      {revokingMarkerId === marker.id ? (
+                        <div className="manual-marker__revoke">
+                          <Field label="Alasan pencabutan">
+                            <textarea
+                              rows={2}
+                              value={revokeReason}
+                              onChange={(event) => setRevokeReason(event.target.value)}
+                            />
+                          </Field>
+                          <div>
+                            <Button
+                              variant="neutral"
+                              type="button"
+                              onClick={() => setRevokingMarkerId(null)}
+                            >
+                              Batal
+                            </Button>
+                            <Button
+                              type="button"
+                              disabled={busy || revokeReason.trim().length < 3}
+                              onClick={() => void revokeMarker(marker.id)}
+                            >
+                              Cabut dan tinjau ulang
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                <details className="decision-history">
+                  <summary>
+                    <ClockCounterClockwise weight="bold" /> Riwayat keputusan (
+                    {chunk.decisions.length})
+                  </summary>
+                  <ol>
+                    {chunk.decisions.map((item) => (
+                      <li key={item.id}>
+                        <div>
+                          <strong>
+                            {item.modelId === "human-review" ? "Keputusan HR" : "Rekomendasi AI"}
+                          </strong>
+                          <StatusStamp
+                            status={item.visibility}
+                            label={visibilityLabel(item.visibility)}
+                          />
+                        </div>
+                        <p>{item.rationale}</p>
+                        <span>
+                          {item.modelId === "human-review"
+                            ? (item.reviewedByName ?? "HR")
+                            : `${Math.round(item.confidence * 100)}% keyakinan AI`}
+                          {" · "}
+                          {formatDecisionTimestamp(item.createdAt)} · Preferensi v
+                          {item.policyVersion}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </details>
               </article>
             );
           })}
@@ -406,17 +780,26 @@ function DocumentDetail() {
   const [activeTab, setActiveTab] = useState<DetailTab>("review");
   const unresolved = version.chunks?.filter((chunk) => chunk.visibility === "NEEDS_REVIEW") ?? [];
   const hasUnreviewedDecisions =
-    version.chunks?.some((chunk) => !chunk.decisions[0]?.reviewedAt) ?? false;
+    version.chunks?.some(
+      (chunk) => !chunk.decisions.find((decision) => decision.isCurrentPolicy)?.reviewedAt,
+    ) ?? false;
   const decisionCount = Object.keys(choices).length;
   const fileName = version.uploadedFile?.originalName || version.title;
   const statusLabel = version.status.replaceAll("_", " ");
   const effectiveDate = formatDocumentDate(version.effectiveFrom);
 
   async function saveReview() {
+    const missingReason = Object.keys(choices).some(
+      (chunkId) => (notes[chunkId]?.trim().length ?? 0) < 3,
+    );
+    if (missingReason) {
+      setError("Tuliskan alasan HR minimal 3 karakter untuk setiap perubahan akses.");
+      return;
+    }
     const decisions = Object.entries(choices).map(([chunkId, visibility]) => ({
       chunkId,
       visibility,
-      reason: notes[chunkId] || "Diverifikasi oleh HR melalui review dokumen.",
+      reason: notes[chunkId]?.trim() ?? "",
     }));
     if (!decisions.length) return;
     setBusy(true);
@@ -428,6 +811,7 @@ function DocumentDetail() {
       });
       await router.invalidate();
       setChoices({});
+      setNotes({});
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Keputusan review gagal disimpan.");
     } finally {
@@ -436,13 +820,64 @@ function DocumentDetail() {
   }
 
   function confirmAiDecisions() {
-    setChoices(
-      Object.fromEntries(
-        (version.chunks ?? [])
-          .filter((chunk) => chunk.visibility === "EMPLOYEE_SAFE" || chunk.visibility === "HR_ONLY")
-          .map((chunk) => [chunk.id, chunk.visibility as ReviewChoice]),
-      ),
+    const confirmable = (version.chunks ?? []).filter(
+      (chunk) => chunk.visibility === "EMPLOYEE_SAFE" || chunk.visibility === "HR_ONLY",
     );
+    setChoices(
+      Object.fromEntries(confirmable.map((chunk) => [chunk.id, chunk.visibility as ReviewChoice])),
+    );
+    setNotes((current) => ({
+      ...current,
+      ...Object.fromEntries(
+        confirmable.map((chunk) => [chunk.id, "HR menyetujui rekomendasi AI setelah review."]),
+      ),
+    }));
+  }
+
+  async function createMarker(
+    selection: MarkerSelection,
+    category: string,
+    reason: string,
+  ): Promise<boolean> {
+    setBusy(true);
+    setError("");
+    try {
+      await apiFetch(`/iom/${version.id}/confidentiality/markers`, {
+        method: "POST",
+        body: JSON.stringify({
+          chunkId: selection.chunkId,
+          start: selection.start,
+          end: selection.end,
+          category,
+          reason,
+        }),
+      });
+      await router.invalidate();
+      return true;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Penanda rahasia gagal disimpan.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeMarker(annotationId: string, reason: string): Promise<boolean> {
+    setBusy(true);
+    setError("");
+    try {
+      await apiFetch(`/iom/${version.id}/confidentiality/markers/${annotationId}/revoke`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      });
+      await router.invalidate();
+      return true;
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Penanda rahasia gagal dicabut.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function publish() {
@@ -570,7 +1005,7 @@ function DocumentDetail() {
         items={[
           {
             value: "review",
-            label: "Review",
+            label: "Kerahasiaan",
             count: version.chunks?.length ?? 0,
           },
           ...(!isPublished ? [{ value: "metadata", label: "Metadata" }] : []),
@@ -599,6 +1034,8 @@ function DocumentDetail() {
             onChangeNote={(chunkId, note) =>
               setNotes((current) => ({ ...current, [chunkId]: note }))
             }
+            onCreateMarker={createMarker}
+            onRevokeMarker={revokeMarker}
           />
         ) : null}
         {activeTab === "metadata" && !isPublished ? (
@@ -748,6 +1185,8 @@ function DocumentDetail() {
             setChoices((current) => ({ ...current, [chunkId]: choice }))
           }
           onChangeNote={(chunkId, note) => setNotes((current) => ({ ...current, [chunkId]: note }))}
+          onCreateMarker={createMarker}
+          onRevokeMarker={revokeMarker}
         />
       </FullscreenDialog>
       {decisionCount ? (

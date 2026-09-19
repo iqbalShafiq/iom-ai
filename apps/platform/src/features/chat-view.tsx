@@ -367,7 +367,7 @@ export function ChatView(props: {
                   <div className="message__label">
                     {message.role === "user" ? "ANDA" : "RUANG IOM"}
                   </div>
-                  <MessagePrimitive.Content>
+                  <MessagePrimitive.Content className="message__content">
                     <MessagePrimitive.Parts
                       stream={{
                         isStreaming:
