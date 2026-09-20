@@ -5,37 +5,51 @@ import {
   parseClientStreamRequest,
 } from "@anvia/client";
 import type { AgentStream, AgentStreamEvent } from "@anvia/core/agent";
-import { OpenAIClient } from "@anvia/openai";
 import { createClientStreamResponse } from "@anvia/server";
 import {
+  agentTraceOptions,
   createIomAgent,
+  createIomOpenAIClient,
   createOpenAIModel,
   createQdrantKnowledgeIndex,
   modelCatalog,
+  observedTrace,
   type RoleScopedKnowledgeIndex,
   resolveModelSelection,
   StreamReleaseGuard,
+  sanitizeIomChatHistory,
 } from "@iom/agents";
 import type { ServerConfig } from "@iom/config";
-import { type AccessScope, chatRunMetadataSchema } from "@iom/contracts";
+import {
+  type AccessScope,
+  type ChatRunMetadata,
+  chatRunMetadataSchema,
+  DEFAULT_RUNTIME_MODEL_ID,
+} from "@iom/contracts";
 import type { Database, Prisma } from "@iom/database";
+import { chatTurnTrace, type IomObservability } from "@iom/observability";
 import type { Hono } from "hono";
-import { z } from "zod";
 import { audit } from "./audit.js";
 import { authMiddleware } from "./auth.js";
+import { persistChatTranscript } from "./chat-transcript.js";
 import { PrismaEvidenceAuthorizer } from "./evidence.js";
 import { rateLimit } from "./rate-limit.js";
 import type { AppBindings } from "./types.js";
 
-const conversationSchema = z.object({
-  accessScope: z.enum(["EMPLOYEE", "HR"]).default("EMPLOYEE"),
-  modelId: z.string().default("gpt-5.6-luna"),
-  reasoningEffort: z.string().default("none"),
-});
-
-async function deniedFingerprints(database: Database) {
+async function deniedFingerprints(database: Database, accessScope: AccessScope) {
+  // HR is authorized to receive HR-only evidence. The stream guard is an
+  // employee-release boundary, so applying the denied fingerprints to HR
+  // would incorrectly abort valid HR answers after they were already streamed.
+  if (accessScope !== "EMPLOYEE") return [];
   const decisions = await database.confidentialityDecision.findMany({
-    where: { visibility: "HR_ONLY" },
+    where: {
+      visibility: "HR_ONLY",
+      policy: { status: "ACTIVE" },
+      chunk: {
+        visibility: "HR_ONLY",
+        version: { status: { in: ["PUBLISHED", "SUPERSEDED"] } },
+      },
+    },
     orderBy: { createdAt: "desc" },
     take: 200,
     include: { chunk: true },
@@ -114,13 +128,20 @@ function isRetryableProviderOutputError(error: unknown): boolean {
   return typeof kind !== "string" || RETRYABLE_PROVIDER_OUTPUT_KINDS.has(kind);
 }
 
-// Runs the agent stream with retries. Reasoning and tool events are buffered
-// until the first answer text is released; a retryable provider error before
-// that point restarts the run silently, so the client never sees partial
-// reasoning from a discarded attempt. After text starts, the stream is live.
-// A failed attempt is cancelled before retrying so its in-flight provider
-// call cannot interleave with the replacement run. Only the confidentiality
-// guard also needs cancel: it throws after detecting blocked content.
+function isVisibleChatContent(event: AgentStreamEvent): boolean {
+  return (
+    event.type === "text_delta" ||
+    event.type === "reasoning_delta" ||
+    event.type === "tool_call_delta" ||
+    event.type === "tool_call"
+  );
+}
+
+// Stream reasoning, tool calls, and answer text as they arrive. Retry only
+// when a retryable provider error happens before any of those events so the
+// client never sees a discarded attempt. After the first visible event the
+// run is live. A failed attempt is cancelled before retrying so its
+// in-flight provider call cannot interleave with the replacement run.
 async function* runAgentWithRetries(options: {
   start: () => AgentStream;
   fingerprints: Awaited<ReturnType<typeof deniedFingerprints>>;
@@ -138,23 +159,11 @@ async function* runAgentWithRetries(options: {
         // Best effort: the run may already be finished when the guard fires.
       }
     });
-    const pending: AgentStreamEvent[] = [];
-    let released = false;
+    let visible = false;
     let retry = false;
     for await (const event of events) {
-      if (released) {
-        yield event;
-        continue;
-      }
-      if (event.type === "text_delta" && event.delta.length > 0) {
-        released = true;
-        yield* pending;
-        pending.length = 0;
-        yield event;
-        continue;
-      }
       if (event.type === "error") {
-        if (attempt < maxRetries && isRetryableProviderOutputError(event.error)) {
+        if (!visible && attempt < maxRetries && isRetryableProviderOutputError(event.error)) {
           onRetry?.(attempt + 1, event.error);
           try {
             run.cancel("stream-retry");
@@ -164,18 +173,13 @@ async function* runAgentWithRetries(options: {
           retry = true;
           break;
         }
-        released = true;
-        yield* pending;
-        pending.length = 0;
         yield event;
-        continue;
+        return;
       }
-      pending.push(event);
+      if (isVisibleChatContent(event)) visible = true;
+      yield event;
     }
-    if (!retry) {
-      yield* pending;
-      return;
-    }
+    if (!retry) return;
     attempt += 1;
   }
 }
@@ -223,11 +227,33 @@ async function* withGuardStatus(
   }
 }
 
-export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig) {
-  const openai = new OpenAIClient({
+export function projectIomAgentEvents(options: {
+  runId: string;
+  events: AsyncIterable<AgentStreamEvent>;
+  metadata: ChatRunMetadata;
+  mapError: (error: unknown) => { code: string; message: string };
+}): AsyncIterable<ClientStreamEvent> {
+  return withGuardStatus(
+    agentToClientStream({
+      runId: options.runId,
+      events: options.events,
+      metadata: options.metadata,
+      mapError: options.mapError,
+    }),
+    options.runId,
+  );
+}
+
+export function registerChatRoutes(
+  app: Hono<AppBindings>,
+  config: ServerConfig,
+  observability?: IomObservability,
+) {
+  const openai = createIomOpenAIClient({
     apiKey: config.OPENAI_API_KEY,
-    baseUrl: config.OPENAI_BASE_URL,
+    ...(config.OPENAI_BASE_URL === undefined ? {} : { baseUrl: config.OPENAI_BASE_URL }),
   });
+  const catalog = modelCatalog;
   let knowledgePromise:
     | Promise<{ index: RoleScopedKnowledgeIndex; close: () => Promise<void> }>
     | undefined;
@@ -249,42 +275,27 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
 
   app.get("/ai/models", (context) =>
     context.json({
-      models: modelCatalog,
-      defaults: { modelId: "gpt-5.6-luna", reasoningEffort: "none" },
+      models: catalog,
+      defaults: {
+        modelId: catalog[0]?.id ?? DEFAULT_RUNTIME_MODEL_ID,
+        reasoningEffort: catalog[0]?.defaultReasoningEffort ?? "high",
+      },
     }),
   );
 
   app.get("/chat/conversations", async (context) => {
-    const conversations = await context.get("database").conversation.findMany({
-      where: { ownerId: context.get("actor").id },
+    const database = context.get("database");
+    // Remove legacy drafts when the owner returns to the list. The migration
+    // performs the same cleanup for all existing owners during deployment.
+    await database.conversation.deleteMany({
+      where: { ownerId: context.get("actor").id, messages: { none: {} } },
+    });
+    const conversations = await database.conversation.findMany({
+      where: { ownerId: context.get("actor").id, messages: { some: {} } },
       orderBy: { updatedAt: "desc" },
       take: 100,
     });
     return context.json({ conversations });
-  });
-
-  app.post("/chat/conversations", async (context) => {
-    const parsed = conversationSchema.safeParse(await context.req.json().catch(() => ({})));
-    if (!parsed.success) return context.json({ error: "Preferensi percakapan tidak valid." }, 400);
-    const actor = context.get("actor");
-    if (parsed.data.accessScope === "HR" && actor.role !== "HR_ADMIN")
-      return context.json({ error: "Scope HR tidak tersedia." }, 403);
-    const selection = resolveModelSelection(parsed.data.modelId, parsed.data.reasoningEffort);
-    const policy = await context.get("database").confidentialityPolicy.findFirst({
-      where: { status: "ACTIVE" },
-      orderBy: { version: "desc" },
-    });
-    if (!policy) return context.json({ error: "Policy kerahasiaan aktif belum tersedia." }, 409);
-    const conversation = await context.get("database").conversation.create({
-      data: {
-        ownerId: actor.id,
-        accessScope: parsed.data.accessScope,
-        modelId: selection.modelId,
-        reasoningEffort: selection.reasoningEffort,
-        corpusPolicyVersion: policy.version,
-      },
-    });
-    return context.json({ conversation }, 201);
   });
 
   app.get("/chat/conversations/:conversationId", async (context) => {
@@ -309,7 +320,12 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
 
   app.post(
     "/chat/stream",
-    rateLimit({ limit: 30, windowMs: 60_000, keyPrefix: "chat" }),
+    rateLimit({
+      limit: 30,
+      windowMs: 60_000,
+      keyPrefix: "chat",
+      key: (context) => context.get("actor").id,
+    }),
     async (context) => {
       const rawRequest = await context.req.json().catch(() => null);
       let request: ReturnType<typeof parseClientStreamRequest>;
@@ -324,29 +340,84 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
       if (!metadata.success) return context.json({ error: "Metadata chat tidak valid." }, 400);
       const actor = context.get("actor");
       const database = context.get("database");
-      const conversation = await database.conversation.findFirst({
+      const sanitizedMessages = sanitizeIomChatHistory(request.messages);
+      if (!sanitizedMessages.some((message) => message.role === "user")) {
+        return context.json({ error: "Pesan chat tidak boleh kosong." }, 422);
+      }
+      if (metadata.data.accessScope === "HR" && actor.role !== "HR_ADMIN")
+        return context.json({ error: "Scope HR tidak tersedia." }, 403);
+      const selection = resolveModelSelection(
+        metadata.data.modelId,
+        metadata.data.reasoningEffort,
+        catalog,
+      );
+      let conversation = await database.conversation.findFirst({
         where: { id: metadata.data.conversationId, ownerId: actor.id },
       });
-      if (!conversation) return context.json({ error: "Percakapan tidak ditemukan." }, 404);
-      if (conversation.accessScope !== metadata.data.accessScope)
-        return context.json({ error: "Scope percakapan tidak dapat diubah." }, 409);
-      if (conversation.accessScope === "HR" && actor.role !== "HR_ADMIN")
-        return context.json({ error: "Scope HR tidak tersedia." }, 403);
-      const selection = resolveModelSelection(metadata.data.modelId, metadata.data.reasoningEffort);
+      let conversationIsNew = false;
+      if (!conversation) {
+        const existing = await database.conversation.findUnique({
+          where: { id: metadata.data.conversationId },
+          select: { id: true },
+        });
+        if (existing) return context.json({ error: "Percakapan tidak ditemukan." }, 404);
+        conversationIsNew = true;
+      }
       const currentPolicy = await database.confidentialityPolicy.findFirst({
         where: { status: "ACTIVE" },
         orderBy: { version: "desc" },
       });
-      if (!currentPolicy || currentPolicy.version !== conversation.corpusPolicyVersion) {
+      if (!currentPolicy)
+        return context.json({ error: "Policy kerahasiaan aktif belum tersedia." }, 409);
+      if (conversation && conversation.accessScope !== metadata.data.accessScope)
+        return context.json({ error: "Scope percakapan tidak dapat diubah." }, 409);
+      if (conversation?.accessScope === "HR" && actor.role !== "HR_ADMIN")
+        return context.json({ error: "Scope HR tidak tersedia." }, 403);
+      if (conversation && currentPolicy.version !== conversation.corpusPolicyVersion) {
         return context.json(
           { error: "Percakapan memakai generasi corpus lama. Buat percakapan baru." },
           409,
         );
       }
+      const requestMessage = {
+        role: "request",
+        content: request.messages as unknown as Prisma.InputJsonValue,
+        modelId: selection.modelId,
+        reasoningEffort: selection.reasoningEffort,
+      } as const;
+      if (conversationIsNew) {
+        conversation = await database.$transaction(async (transaction) => {
+          const created = await transaction.conversation.create({
+            data: {
+              id: metadata.data.conversationId,
+              ownerId: actor.id,
+              accessScope: metadata.data.accessScope,
+              modelId: selection.modelId,
+              reasoningEffort: selection.reasoningEffort,
+              corpusPolicyVersion: currentPolicy.version,
+            },
+          });
+          await transaction.conversationMessage.create({
+            data: { conversationId: created.id, ...requestMessage },
+          });
+          return created;
+        });
+      } else if (conversation) {
+        await database.$transaction([
+          database.conversation.update({
+            where: { id: conversation.id },
+            data: { modelId: selection.modelId, reasoningEffort: selection.reasoningEffort },
+          }),
+          database.conversationMessage.create({
+            data: { conversationId: conversation.id, ...requestMessage },
+          }),
+        ]);
+      }
+      if (!conversation) return context.json({ error: "Percakapan tidak ditemukan." }, 404);
       const { index } = await knowledge(database);
       const accessScope = conversation.accessScope as AccessScope;
       const agent = createIomAgent({
-        model: createOpenAIModel(openai, selection.modelId),
+        model: createOpenAIModel(openai, selection.modelId, catalog),
         retrieval: index,
         reasoningEffort: selection.reasoningEffort,
         scope: {
@@ -355,10 +426,16 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
           accessScope,
           policyVersion: currentPolicy.version,
         },
+        ...(observability?.agentObservability
+          ? { observability: observability.agentObservability }
+          : {}),
       });
+      const hashedActorId = observability?.hashActorId(actor.id);
+      let chatTraceId: string | undefined;
+      let chatObservationId: string | undefined;
       const stream = runAgentWithRetries({
         maxRetries: 2,
-        fingerprints: await deniedFingerprints(database),
+        fingerprints: await deniedFingerprints(database, accessScope),
         onRetry: (attempt, error) => {
           console.error(
             JSON.stringify({
@@ -369,28 +446,51 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
               modelId: selection.modelId,
               reasoningEffort: selection.reasoningEffort,
               attempt,
-              providerMessage:
-                typeof (error as { message?: unknown })?.message === "string"
-                  ? (error as { message: string }).message
+              providerKind:
+                typeof (error as { kind?: unknown })?.kind === "string"
+                  ? (error as { kind: string }).kind
+                  : undefined,
+              providerCode:
+                typeof (error as { code?: unknown })?.code === "string"
+                  ? (error as { code: string }).code
                   : undefined,
             }),
           );
         },
-        start: () =>
-          agent.stream({
-            messages: request.messages,
+        start: () => {
+          const run = agent.stream({
+            messages: sanitizedMessages,
             abortSignal: context.req.raw.signal,
-          }),
+            ...agentTraceOptions(
+              chatTurnTrace({
+                sessionId: conversation.id,
+                ...(hashedActorId ? { userId: hashedActorId } : {}),
+                modelId: selection.modelId,
+                reasoningEffort: selection.reasoningEffort,
+                accessScope,
+                policyVersion: currentPolicy.version,
+                service: "api",
+                environment: config.LANGFUSE_ENVIRONMENT,
+                release: config.LANGFUSE_RELEASE,
+              }),
+            ),
+          });
+          void run.result
+            .then((outcome) => {
+              const captured = observedTrace(outcome);
+              if (!captured) return;
+              chatTraceId = captured.traceId;
+              if (captured.observationId !== undefined) chatObservationId = captured.observationId;
+            })
+            .catch(() => undefined);
+          return run;
+        },
       });
       const runId = randomUUID();
       const logError = (error: unknown) => {
         const providerStatus =
           typeof (error as { status?: unknown })?.status === "number"
             ? (error as { status: number }).status
-            : undefined;
-        const providerMessage =
-          typeof (error as { message?: unknown })?.message === "string"
-            ? (error as { message: string }).message
             : undefined;
         console.error(
           JSON.stringify({
@@ -402,8 +502,6 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
             reasoningEffort: selection.reasoningEffort,
             errorKind: error instanceof Error ? error.constructor.name : "UnknownError",
             providerStatus,
-            providerMessage,
-            // Config keys are not logged; OpenAI SDK may embed key fragments in error messages.
             providerKind:
               typeof (error as { kind?: unknown })?.kind === "string"
                 ? (error as { kind: string }).kind
@@ -419,7 +517,7 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
           }),
         );
       };
-      const projected = agentToClientStream({
+      const projected = projectIomAgentEvents({
         runId,
         events: stream,
         metadata: metadata.data,
@@ -445,21 +543,25 @@ export function registerChatRoutes(app: Hono<AppBindings>, config: ServerConfig)
         reasoningEffort: selection.reasoningEffort,
         policyVersion: currentPolicy.version,
       });
-      await database.conversation.update({
-        where: { id: conversation.id },
-        data: { modelId: selection.modelId, reasoningEffort: selection.reasoningEffort },
-      });
-      await database.conversationMessage.create({
-        data: {
-          conversationId: conversation.id,
-          role: "request",
-          content: request.messages as unknown as Prisma.InputJsonValue,
-          modelId: selection.modelId,
-          reasoningEffort: selection.reasoningEffort,
-        },
-      });
       return createClientStreamResponse({
-        events: withGuardStatus(projected, runId),
+        headers: { "x-iom-conversation-id": conversation.id },
+        events: persistChatTranscript({
+          events: projected,
+          initialMessages: request.messages,
+          save: async (messages) => {
+            await database.conversationMessage.create({
+              data: {
+                conversationId: conversation.id,
+                role: "transcript",
+                content: messages as unknown as Prisma.InputJsonValue,
+                modelId: selection.modelId,
+                reasoningEffort: selection.reasoningEffort,
+                ...(chatTraceId ? { observabilityTraceId: chatTraceId } : {}),
+                ...(chatObservationId ? { observabilityObservationId: chatObservationId } : {}),
+              },
+            });
+          },
+        }),
         format: "jsonl",
       });
     },

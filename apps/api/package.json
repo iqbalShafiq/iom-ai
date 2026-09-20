@@ -11,9 +11,10 @@
   },
   "dependencies": {
     "@anvia/client": "1.2.0",
-    "@anvia/core": "1.2.1",
-    "@anvia/openai": "1.1.3",
+    "@anvia/core": "1.5.0",
+    "@anvia/openai": "1.1.5",
     "@anvia/server": "1.1.4",
+    "@iom/observability": "workspace:*",
     "@hono/node-server": "1.19.9",
     "@iom/agents": "workspace:*",
     "@iom/config": "workspace:*",
@@ -22,7 +23,7 @@
     "@iom/documents": "workspace:*",
     "argon2": "0.44.0",
     "hono": "4.13.7",
-    "zod": "4.4.0"
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "24.3.0",

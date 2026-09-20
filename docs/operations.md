@@ -21,12 +21,50 @@ dan platform sebagai tiga process/service terpisah di production.
 
 `pnpm user:create` memakai kebijakan password yang sama dengan login: panjang 8–256 karakter.
 
+Runtime mengunci classifier, overlap, chat, dan evaluation ke `deepseek-v4-flash-0731` di konfigurasi
+aplikasi; nilai model lama di environment diabaikan agar tidak dapat mengubah model production.
+Katalog chat juga hanya menyediakan model tersebut. Seluruh workload memakai reasoning `high` dan
+tidak mempunyai fallback stub.
+
+Langfuse dinonaktifkan sampai `LANGFUSE_ENABLED=true` beserta public key, secret key, base URL,
+environment, release, dan `OBSERVABILITY_ID_SECRET` valid. Outage Langfuse tidak boleh menggagalkan
+klasifikasi, overlap, atau chat. `flush()` hanya untuk smoke development; shutdown process memakai
+`close()` yang idempotent. Evaluation development dijalankan manual lewat `pnpm eval:smoke`,
+`pnpm eval:observability`, dan `pnpm eval:all`. Belum ada CI release gate.
+
+`pnpm eval:observability` mengirim satu run confidentiality, overlap, dan chat ke Langfuse bila
+enabled. Ingest Cloud bisa tertunda puluhan detik; cek session `obs-probe-confidentiality`,
+`obs-probe-overlap`, dan `obs-probe-chat`. US Cloud memakai
+`LANGFUSE_BASE_URL=https://us.cloud.langfuse.com`.
+
 ## Worker recovery
 
 Job memakai lease dan heartbeat. Worker yang mati boleh langsung direstart; job `RUNNING` dengan
 lease kedaluwarsa akan diambil worker lain. Error transient diulang maksimal tiga kali dengan
 backoff. `DEAD_LETTER` tidak diulang otomatis: baca `lastErrorCode`, perbaiki akar masalah, lalu
 gunakan retry dari dashboard/API agar idempotency key tetap dipertahankan.
+
+Setiap slot worker hanya mengambil satu job dan langsung menjalankannya; job tidak boleh menunggu
+di antrean memory setelah lease diambil. `INGEST_DOCUMENT`, `INDEX_VERSION`, dan `ANALYZE_OVERLAP`
+yang terminal direkonsiliasi ke status user-facing saat startup. Kegagalan indexing tidak
+membatalkan status published: file menjadi `FAILED` dan retry hanya menjadwalkan indexing ulang,
+tanpa mengulang parsing/OCR/classification.
+
+`WORKER_AI_TIMEOUT_MS` membatasi satu operasi model. Naikkan hanya berdasarkan ukuran dokumen dan
+latency provider yang terukur; timeout tetap dianggap transient dan mengikuti bounded retry.
+
+## Overlap resolution
+
+`ANALYZE_OVERLAP` memproses seluruh logical page draft, menjalankan semantic dan lexical retrieval
+dengan concurrency terbatas, lalu menyimpan metrics aman pada `OverlapRun`. Status run mengikuti
+`QUEUED → RUNNING → COMPLETED|FAILED`; kegagalan retrieval atau model tidak boleh ditampilkan
+sebagai zero overlap. `FAILED` dianalisis ulang dengan membuat run baru.
+
+Keputusan HR final hanya dapat diubah sebelum candidate dipublish. `REPLACES` mengubah existing
+menjadi `SUPERSEDED` pada transaksi publish; partial dan complement tidak menurunkan existing.
+Jika migration menemukan keputusan manual lama, UI menampilkannya sebagai `PENDING_REVIEW` dan HR
+wajib menyelesaikannya ulang. Backup PostgreSQL dilakukan sebelum migration overlap dan Qdrant tidak
+pernah menjadi sumber kebenaran authorization.
 
 ## Policy rollout
 
@@ -35,11 +73,34 @@ Jangan mengaktifkan draft secara langsung. Jalankan impact analysis, selesaikan 
 dalam transaksi yang sama, kemudian mengantrikan reindex untuk version published. Selama reindex,
 reauthorization PostgreSQL menolak vector generation lama.
 
+## Penyimpanan berkas
+
+`STORAGE_DRIVER` memilih tempat original disimpan: `local` (default) menulis ke `STORAGE_ROOT`,
+`r2` menyimpan ke bucket Cloudflare R2 lewat API S3-compatible. Untuk `r2`, startup gagal bila
+`R2_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, atau `R2_SECRET_ACCESS_KEY` kosong, atau bila `R2_ACCOUNT_ID`
+dan `R2_ENDPOINT` keduanya kosong. Bucket tetap privat: setiap byte dibaca lewat API dengan
+otorisasi yang sama seperti sebelumnya (preview PDF hanya untuk HR), dan kredensial hanya hidup di
+proses server.
+
+Mengganti driver tidak memindahkan objek yang sudah ada, karena key tersimpan di PostgreSQL dan
+harus ada di driver yang aktif. Pindah dari `local` ke `r2` berarti menyalin seluruh isi
+`STORAGE_ROOT` ke bucket dengan key yang sama sebelum restart API dan worker; arah sebaliknya
+serupa. Uji satu unduhan dokumen dari UI sebelum mematikan driver lama.
+
 ## Backup dan restore
 
 Backup PostgreSQL dan storage original sebagai satu recovery unit. Qdrant boleh dibangun ulang dari
 PostgreSQL/chunks dengan job indexing. Verifikasi checksum original setelah restore. AuditEvent
 append-only tidak boleh dipangkas tanpa retention policy formal.
+
+Migration `upload_pipeline_hardening` memeriksa duplicate SHA-256 sebelum membuat unique index dan
+akan gagal dengan pesan eksplisit bila data lama mengandung duplikat. Selesaikan duplikat melalui
+prosedur data-governance yang menjaga audit trail; jangan menghapus record otomatis.
+
+Migration `page_chunking` menandai versi lama sebagai `LEGACY_SECTION`; versi yang baru diproses
+memakai `PAGE`. Versi published lama tidak diubah diam-diam karena rechunking juga mengubah unit
+review kerahasiaan dan citation. Migrasikan corpus lama melalui upload revision/reingestion yang
+melewati classification dan persetujuan HR lagi, lalu publish dan supersede melalui flow normal.
 
 ## Incident kerahasiaan
 

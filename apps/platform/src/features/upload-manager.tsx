@@ -7,7 +7,16 @@ export interface ClientUpload {
   fileId?: string;
   name: string;
   progress: number;
-  status: "queued" | "uploading" | "processing" | "reviewing" | "completed" | "failed";
+  status:
+    | "queued"
+    | "uploading"
+    | "extracting"
+    | "ocr"
+    | "classifying"
+    | "reviewing"
+    | "indexing"
+    | "completed"
+    | "failed";
   error?: string;
 }
 
@@ -25,12 +34,12 @@ function sendFile(batchId: string, file: File, update: (patch: Partial<ClientUpl
     request.withCredentials = true;
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable)
-        update({ progress: Math.round((event.loaded / event.total) * 70), status: "uploading" });
+        update({ progress: Math.round((event.loaded / event.total) * 40), status: "uploading" });
     });
     request.addEventListener("load", () => {
       if (request.status >= 200 && request.status < 300) {
         const response = JSON.parse(request.responseText) as { file: { id: string } };
-        update({ fileId: response.file.id, progress: 75, status: "processing" });
+        update({ fileId: response.file.id, progress: 45, status: "queued" });
       } else
         update({
           status: "failed",
@@ -53,7 +62,11 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
   const upload = useCallback(async (files: File[], note: string, defaultConfidential: boolean) => {
     const { batch } = await apiFetch<{ batch: { id: string } }>("/uploads/batches", {
       method: "POST",
-      body: JSON.stringify({ note: note || undefined, defaultConfidential }),
+      body: JSON.stringify({
+        note: note || undefined,
+        defaultConfidential,
+        expectedFiles: files.length,
+      }),
     });
     const entries = files.map((file) => ({
       key: `${batch.id}:${file.name}:${file.lastModified}`,
@@ -63,21 +76,7 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
       status: "queued" as const,
     }));
     setUploads((current) => [...entries, ...current]);
-    let cursor = 0;
-    async function worker() {
-      while (cursor < files.length) {
-        const index = cursor++;
-        const file = files[index];
-        const entry = entries[index];
-        if (!file || !entry) continue;
-        await sendFile(batch.id, file, (patch) => {
-          setUploads((current) =>
-            current.map((item) => (item.key === entry.key ? { ...item, ...patch } : item)),
-          );
-        });
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(3, files.length) }, () => worker()));
+    let sealed = false;
     const stream = new EventSource(apiUrl(`/uploads/batches/${batch.id}/events`), {
       withCredentials: true,
     });
@@ -94,21 +93,14 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
           if (!serverFile) return item;
           return {
             ...item,
-            progress: serverFile.progress,
-            status:
-              serverFile.stage === "COMPLETED"
-                ? "completed"
-                : serverFile.stage === "FAILED"
-                  ? "failed"
-                  : serverFile.stage === "REVIEWING"
-                    ? "reviewing"
-                    : "processing",
+            progress: Math.max(item.progress, serverFile.progress),
+            status: serverFile.stage.toLowerCase() as ClientUpload["status"],
             ...(serverFile.safeError ? { error: serverFile.safeError } : {}),
           };
         }),
       );
       if (
-        update.files.length > 0 &&
+        sealed &&
         update.files.every(
           (file) =>
             file.stage === "REVIEWING" || file.stage === "COMPLETED" || file.stage === "FAILED",
@@ -116,6 +108,26 @@ export function UploadManagerProvider({ children }: { children: ReactNode }) {
       )
         stream.close();
     });
+    let cursor = 0;
+    let acceptedFiles = 0;
+    async function worker() {
+      while (cursor < files.length) {
+        const index = cursor++;
+        const file = files[index];
+        const entry = entries[index];
+        if (!file || !entry) continue;
+        await sendFile(batch.id, file, (patch) => {
+          if (patch.fileId) acceptedFiles += 1;
+          setUploads((current) =>
+            current.map((item) => (item.key === entry.key ? { ...item, ...patch } : item)),
+          );
+        });
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(3, files.length) }, () => worker()));
+    await apiFetch(`/uploads/batches/${batch.id}/seal`, { method: "POST" });
+    sealed = true;
+    if (acceptedFiles === 0) stream.close();
     return batch.id;
   }, []);
   const value = useMemo(() => ({ uploads, upload }), [uploads, upload]);

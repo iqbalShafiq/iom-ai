@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
 
+export const MAX_NORMALIZED_DOCUMENT_CHARACTERS = 2_000_000;
+export const MAX_DOCUMENT_CHUNKS = 2_000;
+
 export interface ParsedPage {
   page: number;
   text: string;
@@ -36,44 +39,26 @@ export function normalizeText(text: string): string {
     .trim();
 }
 
-export function chunkPages(
-  pages: ParsedPage[],
-  sourceHash: string,
-  maxCharacters = 2_400,
-): DocumentChunk[] {
+export function chunkPages(pages: ParsedPage[], sourceHash: string): DocumentChunk[] {
   const chunks: DocumentChunk[] = [];
-  let ordinal = 0;
+  const seenPages = new Set<number>();
 
   for (const page of pages) {
-    const paragraphs = normalizeText(page.text)
-      .split(/\n\s*\n/)
-      .filter(Boolean);
-    let buffer = "";
-    const flush = () => {
-      if (!buffer) return;
-      const stableKey = `${sourceHash}:p${page.page}:c${ordinal}:${createHash("sha1").update(buffer).digest("hex")}`;
-      chunks.push({
-        id: stableUuid(stableKey),
-        stableKey,
-        ordinal,
-        pageStart: page.page,
-        pageEnd: page.page,
-        text: buffer,
-      });
-      ordinal += 1;
-      buffer = "";
-    };
-    for (const paragraph of paragraphs) {
-      const looksLikeHeading = paragraph.length <= 120 && !/[.!?;:]$/.test(paragraph);
-      if (
-        buffer &&
-        (buffer.length + paragraph.length + 2 > maxCharacters ||
-          (looksLikeHeading && buffer.length >= 200))
-      )
-        flush();
-      buffer = buffer ? `${buffer}\n\n${paragraph}` : paragraph;
+    if (!Number.isSafeInteger(page.page) || page.page < 1 || seenPages.has(page.page)) {
+      throw new Error("Parsed pages must have unique positive page numbers.");
     }
-    flush();
+    seenPages.add(page.page);
+    const text = normalizeText(page.text);
+    if (!text) continue;
+    const stableKey = `${sourceHash}:page:${page.page}:${createHash("sha1").update(text).digest("hex")}`;
+    chunks.push({
+      id: stableUuid(stableKey),
+      stableKey,
+      ordinal: chunks.length,
+      pageStart: page.page,
+      pageEnd: page.page,
+      text,
+    });
   }
   return chunks;
 }

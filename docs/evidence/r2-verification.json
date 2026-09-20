@@ -1,0 +1,47 @@
+{
+  "timestamp": "2026-09-20T02:43:33.647Z",
+  "storageDriver": "r2",
+  "bucketObjects": 5,
+  "databaseObjects": 5,
+  "allPresentInR2": true,
+  "allSizesMatch": true,
+  "allSha256Match": true,
+  "localCopies": 0,
+  "objects": [
+    {
+      "name": "iom-028-2026-pedoman-kerja-hibrida.pdf",
+      "key": "uploads/e740fc03-0f38-4bf6-9053-7561627eba55/84657677-8c81-496a-b52c-4c49ffca025c-iom-028-2026-pedoman-kerja-hibrida.pdf",
+      "r2Present": true,
+      "sizeMatches": true,
+      "sha256Matches": true
+    },
+    {
+      "name": "iom-033-2026-keamanan-informasi.pdf",
+      "key": "uploads/e740fc03-0f38-4bf6-9053-7561627eba55/654d0ff0-d747-4dc2-b122-4554d66ab258-iom-033-2026-keamanan-informasi.pdf",
+      "r2Present": true,
+      "sizeMatches": true,
+      "sha256Matches": true
+    },
+    {
+      "name": "iom-029-2026-darurat-scan.pdf",
+      "key": "uploads/e740fc03-0f38-4bf6-9053-7561627eba55/c89d5edb-7967-4e08-a42c-17ece9700797-iom-029-2026-darurat-scan.pdf",
+      "r2Present": true,
+      "sizeMatches": true,
+      "sha256Matches": true
+    },
+    {
+      "name": "iom-014-2014-kebijakan-cuti-tahunan.pdf",
+      "key": "uploads/db23fa01-4f95-4ea4-b6bc-09dad72ea34c/cdf39594-a671-4708-8560-26e42144c67a-iom-014-2014-kebijakan-cuti-tahunan.pdf",
+      "r2Present": true,
+      "sizeMatches": true,
+      "sha256Matches": true
+    },
+    {
+      "name": "iom-021-2026-kebijakan-cuti-tahunan.pdf",
+      "key": "uploads/aa817efe-9f47-44c1-8a28-b576d402b6ff/76aa6bfa-68f9-49ee-9a03-ef75dfc99966-iom-021-2026-kebijakan-cuti-tahunan.pdf",
+      "r2Present": true,
+      "sizeMatches": true,
+      "sha256Matches": true
+    }
+  ]
+}

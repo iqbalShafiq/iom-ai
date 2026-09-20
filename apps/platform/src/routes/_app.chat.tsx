@@ -23,21 +23,10 @@ function ChatLanding() {
   const [busy, setBusy] = useState(false);
   const { user } = useRouteContext({ from: "/_app" });
   if (pathname !== "/chat") return <Outlet />;
-  async function create(scope: "EMPLOYEE" | "HR" = "EMPLOYEE") {
+  async function openDraft(scope: "EMPLOYEE" | "HR" = "EMPLOYEE") {
     setBusy(true);
     try {
-      const { conversation } = await apiFetch<{ conversation: Conversation }>(
-        "/chat/conversations",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            accessScope: scope,
-            modelId: "gpt-5.6-luna",
-            reasoningEffort: "none",
-          }),
-        },
-      );
-      await navigate({ to: "/chat/$conversationId", params: { conversationId: conversation.id } });
+      await navigate({ to: "/chat/new", search: { scope } });
     } finally {
       setBusy(false);
     }
@@ -45,17 +34,15 @@ function ChatLanding() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="KNOWLEDGE / CHAT"
-        title="Chat regulasi"
-        description="Setiap jawaban ditelusuri ke IOM yang sesuai scope dan tanggal."
+        title="Chats"
         actions={
           <div className="header-action-group">
-            <Button disabled={busy} onClick={() => create("EMPLOYEE")}>
-              <Plus /> Chat employee-safe
+            <Button variant="secondary" disabled={busy} onClick={() => openDraft("EMPLOYEE")}>
+              <Plus weight="bold" /> {user.role === "HR_ADMIN" ? "Chat as Employee" : "Start Chat"}
             </Button>
             {user.role === "HR_ADMIN" ? (
-              <Button disabled={busy} onClick={() => create("HR")}>
-                <Plus /> Chat HR
+              <Button variant="primary" disabled={busy} onClick={() => openDraft("HR")}>
+                <Plus weight="bold" /> Chat as HR
               </Button>
             ) : null}
           </div>
@@ -63,8 +50,8 @@ function ChatLanding() {
       />
       {conversations.length === 0 ? (
         <EmptyState
-          title="Belum ada percakapan"
-          description="Mulai dari pertanyaan yang benar-benar Anda perlukan."
+          title="Belum ada chat"
+          description="Mulai percakapan baru untuk menanyakan kebijakan IOM yang sudah diotorisasi."
         />
       ) : (
         <div className="conversation-list">

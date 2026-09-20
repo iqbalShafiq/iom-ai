@@ -1,0 +1,23 @@
+{
+  "name": "@iom/observability",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --pool=threads --maxWorkers=1"
+  },
+  "dependencies": {
+    "@anvia/core": "1.5.0",
+    "@anvia/langfuse": "1.2.0",
+    "@iom/contracts": "workspace:*",
+    "@langfuse/otel": "5.11.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.0"
+  }
+}

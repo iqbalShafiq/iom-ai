@@ -29,6 +29,14 @@
       },
       "style": {
         "noDescendingSpecificity": "off"
+      },
+      "a11y": {
+        "noLabelWithoutControl": {
+          "level": "error",
+          "options": {
+            "inputComponents": ["Select"]
+          }
+        }
       }
     }
   },

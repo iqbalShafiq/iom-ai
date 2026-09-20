@@ -2,9 +2,9 @@ import { expect, test } from "@playwright/test";
 
 test("login is readable, keyboard reachable, and has no horizontal overflow", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: "Masuk ke ruang kerja" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Masuk" })).toBeVisible();
   await expect(page.getByText("Tanya kebijakan internal")).toBeVisible();
-  await expect(page.getByText("Upload batches")).toBeVisible({
+  await expect(page.getByText("Upload", { exact: true })).toBeVisible({
     timeout: 6_000,
   });
   await page.getByRole("button", { name: "Tampilkan Review confidential" }).click();

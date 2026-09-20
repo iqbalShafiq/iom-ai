@@ -174,7 +174,9 @@ Chat renders these as distinct semantic parts, in this order when available:
   hue.
 - Always show IOM number, revision, effective range, and confirmed relationship near comparisons.
 - Change-over-time views present previous value, proposed/current value, and effective date.
-- Overlap evidence is side-by-side and traceable to both documents.
+- Overlap evidence is side-by-side and traceable to both documents. HR sees every final outcome
+  (replace, partial override with topic scope, complement, or no material overlap) plus a separate
+  pending-review state; AI recommendations are never silently saved as decisions.
 - Recommendation cards say “Rekomendasi sistem”; action controls say “Keputusan HR.” Recording a
   decision and changing document lifecycle remain separate explicit actions.
 - Confidence below threshold or missing provenance is visually routed to manual review.

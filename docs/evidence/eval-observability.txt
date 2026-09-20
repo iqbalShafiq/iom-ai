@@ -1,0 +1,13 @@
+
+> iom-ai@0.1.0 eval:observability /Users/shafiq/VsCodeProjects/iom-ai
+> dotenv -e .env -- pnpm --filter @iom/evals eval observability
+
+
+> @iom/evals@0.1.0 eval /Users/shafiq/VsCodeProjects/iom-ai/packages/evals
+> tsx src/cli.ts observability
+
+{"langfuseEnabled":true,"host":"us.cloud.langfuse.com","traces":{"confidentiality":"fd565a359c5885b010c58ae32ce9b940","chat":"6383bdee8367711f0dedc5da1e788721"},"missing":["overlap"]}
+/Users/shafiq/VsCodeProjects/iom-ai/packages/evals:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @iom/evals@0.1.0 eval: `tsx src/cli.ts observability`
+Exit status 1
+ ELIFECYCLE  Command failed with exit code 1.

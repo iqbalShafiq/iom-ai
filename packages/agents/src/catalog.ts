@@ -1,43 +1,27 @@
-import type { OpenAIClient, OpenAICompletionModel } from "@anvia/openai";
-import type { ModelOption, ReasoningEffort } from "@iom/contracts";
+import type { OpenAIClient, OpenAICompletionModel, OpenAIReasoningControls } from "@anvia/openai";
+import {
+  DEFAULT_REASONING_EFFORT,
+  DEFAULT_RUNTIME_MODEL_ID,
+  type ModelOption,
+  type ReasoningEffort,
+} from "@iom/contracts";
+
+export const defaultOpenAIModelId = DEFAULT_RUNTIME_MODEL_ID;
+
+export const agentReasoningEfforts = {
+  confidentiality: DEFAULT_REASONING_EFFORT,
+  overlap: DEFAULT_REASONING_EFFORT,
+} as const satisfies Record<string, ReasoningEffort>;
+
+export type IomOpenAIModel = OpenAICompletionModel<OpenAIReasoningControls>;
 
 export const modelCatalog = [
   {
-    id: "gpt-5.6-luna",
-    label: "Luna",
-    description: "Cepat dan hemat untuk pertanyaan regulasi sehari-hari.",
-    supportedReasoningEfforts: ["none"],
-    defaultReasoningEffort: "none",
-    supportsStreaming: true,
-    supportsTools: true,
-    supportsReasoningSummary: false,
-  },
-  {
-    id: "gpt-5.6-terra",
-    label: "Terra",
-    description: "Pilihan seimbang untuk sebagian besar percakapan.",
-    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
-    defaultReasoningEffort: "medium",
-    supportsStreaming: true,
-    supportsTools: true,
-    supportsReasoningSummary: true,
-  },
-  {
-    id: "gpt-5.6-sol",
-    label: "Sol",
-    description: "Analisis lebih mendalam untuk kasus kebijakan kompleks.",
-    supportedReasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
-    defaultReasoningEffort: "high",
-    supportsStreaming: true,
-    supportsTools: true,
-    supportsReasoningSummary: true,
-  },
-  {
-    id: "gpt-6-astra",
-    label: "Astra",
-    description: "Model paling kuat untuk hubungan regulasi yang paling rumit.",
-    supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
-    defaultReasoningEffort: "high",
+    id: defaultOpenAIModelId,
+    label: "DeepSeek V4 Flash 0731",
+    description: "Model runtime untuk chat, klasifikasi kerahasiaan, overlap, dan evaluasi.",
+    supportedReasoningEfforts: [DEFAULT_REASONING_EFFORT],
+    defaultReasoningEffort: DEFAULT_REASONING_EFFORT,
     supportsStreaming: true,
     supportsTools: true,
     supportsReasoningSummary: true,
@@ -46,8 +30,12 @@ export const modelCatalog = [
 
 export type AllowedModelId = (typeof modelCatalog)[number]["id"];
 
-export function resolveModelSelection(modelId: string, effort: string) {
-  const model = modelCatalog.find((option) => option.id === modelId);
+export function resolveModelSelection(
+  modelId: string,
+  effort: string,
+  catalog: readonly ModelOption[] = modelCatalog,
+) {
+  const model = catalog.find((option) => option.id === modelId);
   if (!model) throw new Error("MODEL_NOT_ALLOWED");
   if (!(model.supportedReasoningEfforts as readonly string[]).includes(effort)) {
     throw new Error("REASONING_EFFORT_NOT_SUPPORTED");
@@ -55,16 +43,49 @@ export function resolveModelSelection(modelId: string, effort: string) {
   return { modelId: model.id, reasoningEffort: effort as ReasoningEffort };
 }
 
+export function resolveModelApi(
+  modelId: string,
+  catalog: readonly ModelOption[] = modelCatalog,
+): "chat" | "responses" {
+  if (!catalog.some((option) => option.id === modelId)) throw new Error("MODEL_NOT_ALLOWED");
+  return modelId.startsWith("deepseek") ? "chat" : "responses";
+}
+
+export function openaiReasoning(reasoningEffort: ReasoningEffort) {
+  return {
+    controls: { reasoningEffort } as const,
+    providerOptions: {
+      reasoning: {
+        effort: reasoningEffort,
+        summary: "auto" as const,
+      },
+    },
+  };
+}
+
+export function reasoningControls(reasoningEffort: ReasoningEffort) {
+  return openaiReasoning(reasoningEffort).controls;
+}
+
+export function modelSupportsReasoningEffort(model: IomOpenAIModel | undefined) {
+  return model?.controls?.reasoningEffort !== undefined;
+}
+
+export function reasoningPlacement(
+  model: IomOpenAIModel | undefined,
+  reasoningEffort: ReasoningEffort,
+) {
+  const reasoning = openaiReasoning(reasoningEffort);
+  if (!modelSupportsReasoningEffort(model)) {
+    return { providerOptions: reasoning.providerOptions };
+  }
+  return reasoning;
+}
+
 export function createOpenAIModel(
   client: OpenAIClient,
-  modelId: AllowedModelId,
-): OpenAICompletionModel {
-  switch (modelId) {
-    case "gpt-5.6-luna":
-      return client.completionModel({ modelId, api: "chat" });
-    case "gpt-5.6-terra":
-    case "gpt-5.6-sol":
-    case "gpt-6-astra":
-      return client.completionModel({ modelId, api: "responses" });
-  }
+  modelId: string,
+  catalog: readonly ModelOption[] = modelCatalog,
+): IomOpenAIModel {
+  return client.completionModel({ modelId, api: resolveModelApi(modelId, catalog) });
 }

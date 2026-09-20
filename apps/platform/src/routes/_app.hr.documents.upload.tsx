@@ -1,12 +1,20 @@
-import { Button, Field, PageHeader, ProgressBar, StatusStamp, Textarea } from "@iom/ui";
-import { FileArrowUp, Files, Warning } from "@phosphor-icons/react";
+import { Button, HoverPopover, PageHeader, ProgressBar, StatusStamp } from "@iom/ui";
+import {
+  ClockCounterClockwise,
+  FileArrowUp,
+  Files,
+  Globe,
+  LockKey,
+  Pulse,
+  Warning,
+} from "@phosphor-icons/react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { type DragEvent, type FormEvent, useRef, useState } from "react";
+import { type DragEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import { useUploadManager } from "@/features/upload-manager";
 import { apiFetch } from "@/lib/api";
 import type { UploadBatchRow } from "@/lib/types";
 
-export const Route = createFileRoute("/_app/hr/uploads")({
+export const Route = createFileRoute("/_app/hr/documents/upload")({
   loader: () => apiFetch<{ batches: UploadBatchRow[] }>("/uploads/batches"),
   component: UploadsPage,
 });
@@ -17,9 +25,18 @@ function UploadsPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [confidential, setConfidential] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [retrying, setRetrying] = useState<string | null>(null);
+  useEffect(() => {
+    const hasActiveBatch = batches.some((batch) =>
+      batch.files.some((file) => !["REVIEWING", "COMPLETED", "FAILED"].includes(file.stage)),
+    );
+    if (!hasActiveBatch) return;
+    const timer = window.setInterval(() => void router.invalidate(), 2_000);
+    return () => window.clearInterval(timer);
+  }, [batches, router]);
   async function retry(fileId: string) {
     setRetrying(fileId);
     setError("");
@@ -39,15 +56,10 @@ function UploadsPage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!files.length) return;
-    const form = new FormData(event.currentTarget);
     setBusy(true);
     setError("");
     try {
-      await manager.upload(
-        files,
-        String(form.get("note") ?? ""),
-        form.get("confidential") === "on",
-      );
+      await manager.upload(files, "", confidential);
       setFiles([]);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Batch gagal dibuat.");
@@ -61,11 +73,7 @@ function UploadsPage() {
   }
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow="INGESTION / BATCH"
-        title="Upload batches"
-        description="Hingga 500 file per batch. PDF scan akan dialihkan ke OCR lokal secara otomatis."
-      />
+      <PageHeader title="Upload dokumen" />
       <form className="upload-workbench" onSubmit={submit}>
         <button
           type="button"
@@ -86,29 +94,49 @@ function UploadsPage() {
           accept=".pdf,.docx,.md,.markdown,.txt"
           onChange={(event) => addFiles(event.target.files)}
         />
-        <div className="upload-options">
-          <Field label="Catatan batch" hint="Opsional; AI tetap memeriksa seluruh isi.">
-            <Textarea
-              name="note"
-              rows={4}
-              placeholder="Contoh: lampiran budget dan evaluasi individu perlu perhatian khusus."
-            />
-          </Field>
-          <label className="check-field">
-            <input type="checkbox" name="confidential" />
-            <span>
-              <strong>Tandai seluruh batch confidential</strong>
-              <small>Marker ini merupakan batas keras dan tidak dapat diturunkan AI.</small>
-            </span>
-          </label>
-        </div>
         <div className="upload-selection">
           <span>
             <Files /> {files.length} file dipilih
           </span>
-          <Button type="submit" disabled={busy || files.length === 0}>
-            {busy ? "Menyiapkan batch..." : "Mulai upload"}
-          </Button>
+          <div className="upload-selection__actions">
+            <label className={`confidential-switch${confidential ? " is-confidential" : ""}`}>
+              <input
+                type="checkbox"
+                name="confidential"
+                checked={confidential}
+                onChange={(event) => setConfidential(event.target.checked)}
+                aria-label="Tandai seluruh batch confidential"
+              />
+              <span className="confidential-switch__control">
+                <HoverPopover
+                  className="upload-confidential-popover upload-confidential-popover--public"
+                  trigger={
+                    <span className="confidential-switch__icon" aria-hidden="true">
+                      <Globe weight="bold" />
+                    </span>
+                  }
+                >
+                  <strong>Non-confidential</strong>
+                  <span>Dokumen employee-safe dapat tersedia untuk karyawan.</span>
+                </HoverPopover>
+                <span className="confidential-switch__thumb" aria-hidden="true" />
+                <HoverPopover
+                  className="upload-confidential-popover upload-confidential-popover--confidential"
+                  trigger={
+                    <span className="confidential-switch__icon" aria-hidden="true">
+                      <LockKey weight="bold" />
+                    </span>
+                  }
+                >
+                  <strong>Confidential</strong>
+                  <span>Marker ini berlaku untuk seluruh batch dan tidak dapat diturunkan AI.</span>
+                </HoverPopover>
+              </span>
+            </label>
+            <Button type="submit" disabled={busy || files.length === 0}>
+              {busy ? "Menyiapkan batch..." : "Mulai upload"}
+            </Button>
+          </div>
         </div>
         {error ? (
           <div className="form-alert">
@@ -119,10 +147,12 @@ function UploadsPage() {
       {manager.uploads.length ? (
         <section>
           <div className="section-heading">
-            <span>LIVE</span>
+            <span aria-hidden="true" title="Upload aktif">
+              <Pulse weight="bold" />
+            </span>
             <div>
               <h2>Upload aktif</h2>
-              <p>Antrean ini tetap hidup selama Anda bekerja di aplikasi.</p>
+              <p>Tetap aktif antarlaman</p>
             </div>
           </div>
           <div className="upload-queue">
@@ -141,10 +171,12 @@ function UploadsPage() {
       ) : null}
       <section>
         <div className="section-heading">
-          <span>HISTORY</span>
+          <span aria-hidden="true" title="Riwayat unggahan">
+            <ClockCounterClockwise weight="bold" />
+          </span>
           <div>
             <h2>Batch tersimpan</h2>
-            <p>Status server akan tetap tersedia setelah refresh.</p>
+            <p>Tersimpan setelah refresh</p>
           </div>
         </div>
         <div className="batch-history">

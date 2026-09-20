@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ServerConfig } from "@iom/config";
 import type { Database } from "@iom/database";
+import type { IomObservability } from "@iom/observability";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -11,9 +12,19 @@ import { registerOverlapRoutes } from "./overlap.js";
 import { rateLimit } from "./rate-limit.js";
 import type { AppBindings } from "./types.js";
 
-export function createApp(database: Database, config: ServerConfig) {
+export function createApp(
+  database: Database,
+  config: ServerConfig,
+  observability?: IomObservability,
+) {
   const app = new Hono<AppBindings>();
-  app.use("*", secureHeaders());
+  app.use(
+    "*",
+    secureHeaders({
+      xFrameOptions: false,
+      crossOriginResourcePolicy: false,
+    }),
+  );
   app.use(
     "*",
     cors({
@@ -21,8 +32,8 @@ export function createApp(database: Database, config: ServerConfig) {
       credentials: true,
       allowHeaders: ["Content-Type", "X-CSRF-Token"],
       // @anvia/client validates this protocol header on streamed responses.
-      exposeHeaders: ["x-anvia-stream-protocol"],
-      allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+      exposeHeaders: ["x-anvia-stream-protocol", "x-iom-conversation-id"],
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     }),
   );
   app.use("*", async (context, next) => {
@@ -42,7 +53,7 @@ export function createApp(database: Database, config: ServerConfig) {
   app.get("/health", (context) => context.json({ status: "ok" }));
 
   registerAuthRoutes(app, config);
-  registerChatRoutes(app, config);
+  registerChatRoutes(app, config, observability);
   registerDocumentRoutes(app, config);
   registerOverlapRoutes(app, config.OVERLAP_MODEL_ID);
 
@@ -52,7 +63,8 @@ export function createApp(database: Database, config: ServerConfig) {
       JSON.stringify({
         level: "error",
         correlationId: context.get("correlationId"),
-        message: error.message,
+        message: "Unhandled API error",
+        errorKind: error.constructor.name,
       }),
     );
     return context.json(

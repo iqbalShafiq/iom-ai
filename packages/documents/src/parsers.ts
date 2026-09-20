@@ -1,10 +1,15 @@
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { createCanvas } from "@napi-rs/canvas";
 import mammoth from "mammoth";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { createWorker } from "tesseract.js";
 import type { ParsedPage } from "./chunking.js";
 import { MAX_PAGES, type ValidatedFile } from "./validation.js";
+
+const standardFontDataUrl = `${fileURLToPath(
+  new URL("../../standard_fonts/", import.meta.resolve("pdfjs-dist/legacy/build/pdf.mjs")),
+).replaceAll("\\", "/")}/`;
 
 export interface ParsedDocument {
   pages: ParsedPage[];
@@ -33,7 +38,10 @@ export async function parseDocument(
 async function parsePdf(buffer: Uint8Array, ocrLanguages: string): Promise<ParsedDocument> {
   // Node readFile returns Buffer, which is a Uint8Array subclass. pdfjs-dist rejects
   // Buffer explicitly, so copy it into a plain Uint8Array at this trust boundary.
-  const document = await getDocument({ data: Uint8Array.from(buffer) }).promise;
+  const document = await getDocument({
+    data: Uint8Array.from(buffer),
+    standardFontDataUrl,
+  }).promise;
   if (document.numPages > MAX_PAGES) throw new Error("PDF_PAGE_LIMIT_EXCEEDED");
   const pages: ParsedPage[] = [];
   let usedOcr = false;

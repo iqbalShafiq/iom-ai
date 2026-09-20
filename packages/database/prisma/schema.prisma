@@ -73,11 +73,36 @@ enum AnnotationKind {
   NOTE
 }
 
+enum ChunkingStrategy {
+  LEGACY_SECTION
+  PAGE
+}
+
 enum OverlapRecommendation {
-  ARCHIVE_EXISTING
-  PUBLISH_AS_COMPLEMENT
+  REPLACES
+  PARTIALLY_OVERRIDES
+  COMPLEMENTS
   NO_MATERIAL_OVERLAP
   MANUAL_REVIEW
+}
+
+enum OverlapDecisionStatus {
+  PENDING_REVIEW
+  FINAL
+}
+
+enum OverlapDecisionOutcome {
+  REPLACES
+  PARTIALLY_OVERRIDES
+  COMPLEMENTS
+  NO_MATERIAL_OVERLAP
+}
+
+enum OverlapRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
 }
 
 model User {
@@ -92,8 +117,12 @@ model User {
   sessions     AuthSession[]
   conversations Conversation[]
   uploadBatches UploadBatch[]
-  annotations  IomAnnotation[]
+  annotationsCreated IomAnnotation[] @relation("AnnotationCreator")
+  annotationsRevoked IomAnnotation[] @relation("AnnotationRevoker")
+  confidentialityReviews ConfidentialityDecision[] @relation("ConfidentialityReviewer")
   auditEvents  AuditEvent[]
+  noMatchConfirmedRuns OverlapRun[] @relation("OverlapNoMatchConfirmer")
+  overlapDecisions OverlapDecision[] @relation("OverlapDecisionDecider")
 }
 
 model AuthSession {
@@ -132,6 +161,8 @@ model ConversationMessage {
   modelId        String?
   reasoningEffort String?
   usage          Json?
+  observabilityTraceId String?
+  observabilityObservationId String?
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
@@ -143,6 +174,8 @@ model UploadBatch {
   createdById         String         @db.Uuid
   note                String?
   defaultConfidential Boolean        @default(false)
+  expectedFiles       Int            @default(0)
+  sealedAt            DateTime?
   totalFiles          Int            @default(0)
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
@@ -158,7 +191,7 @@ model UploadedFile {
   originalName String
   mimeType     String
   sizeBytes    Int
-  sha256       String
+  sha256       String      @unique
   storageKey   String
   stage        UploadStage @default(QUEUED)
   progress     Int         @default(0)
@@ -171,7 +204,6 @@ model UploadedFile {
   version      IomVersion?
 
   @@unique([batchId, sha256])
-  @@index([sha256])
   @@index([batchId, stage])
 }
 
@@ -215,7 +247,10 @@ model IomVersion {
   effectiveFrom         DateTime
   effectiveUntil        DateTime?
   sourceHash            String
+  chunkingStrategy      ChunkingStrategy         @default(PAGE)
   confidentialityPolicyId String?    @db.Uuid
+  metadataConfirmedAt   DateTime?
+  metadataConfirmedById String?      @db.Uuid
   reviewedById          String?      @db.Uuid
   publishedAt           DateTime?
   createdAt             DateTime     @default(now())
@@ -239,6 +274,7 @@ model IomRelation {
   id              String          @id @default(uuid()) @db.Uuid
   sourceVersionId String          @db.Uuid
   targetVersionId String          @db.Uuid
+  overlapDecisionId String?       @unique @db.Uuid
   type            IomRelationType
   topicScope      Json?
   note            String?
@@ -246,6 +282,7 @@ model IomRelation {
   createdAt       DateTime        @default(now())
   sourceVersion   IomVersion      @relation("RelationSource", fields: [sourceVersionId], references: [id])
   targetVersion   IomVersion      @relation("RelationTarget", fields: [targetVersionId], references: [id])
+  overlapDecision OverlapDecision? @relation(fields: [overlapDecisionId], references: [id])
 
   @@unique([sourceVersionId, targetVersionId, type])
 }
@@ -283,11 +320,16 @@ model IomAnnotation {
   charEnd     Int?
   section     String?
   note        String?
+  revokedById String?        @db.Uuid
+  revokedAt   DateTime?
+  revokeReason String?
   createdAt   DateTime       @default(now())
   version     IomVersion     @relation(fields: [versionId], references: [id], onDelete: Cascade)
-  createdBy   User           @relation(fields: [createdById], references: [id])
+  createdBy   User           @relation("AnnotationCreator", fields: [createdById], references: [id])
+  revokedBy   User?          @relation("AnnotationRevoker", fields: [revokedById], references: [id])
 
   @@index([versionId, pageStart])
+  @@index([versionId, revokedAt])
 }
 
 model ConfidentialityPolicy {
@@ -318,9 +360,12 @@ model ConfidentialityDecision {
   modelId             String
   reviewedById        String?     @db.Uuid
   reviewedAt          DateTime?
+  observabilityTraceId String?
+  observabilityObservationId String?
   createdAt           DateTime    @default(now())
   chunk               IomChunk    @relation(fields: [chunkId], references: [id], onDelete: Cascade)
   policy              ConfidentialityPolicy @relation(fields: [policyId], references: [id])
+  reviewedBy          User?       @relation("ConfidentialityReviewer", fields: [reviewedById], references: [id])
 
   @@index([chunkId, createdAt])
 }
@@ -328,15 +373,22 @@ model ConfidentialityDecision {
 model OverlapRun {
   id                 String      @id @default(uuid()) @db.Uuid
   candidateVersionId String      @db.Uuid
-  status             String
+  status             OverlapRunStatus
   modelId            String
   errorCode          String?
+  coverageComplete   Boolean     @default(false)
+  analysisMetrics    Json?
+  noMatchConfirmedAt DateTime?
+  noMatchConfirmedById String?   @db.Uuid
+  noMatchNote        String?
   createdAt          DateTime    @default(now())
   completedAt        DateTime?
   candidateVersion   IomVersion  @relation("OverlapCandidate", fields: [candidateVersionId], references: [id])
+  noMatchConfirmedBy User?       @relation("OverlapNoMatchConfirmer", fields: [noMatchConfirmedById], references: [id])
   matches            OverlapMatch[]
 
   @@index([candidateVersionId, createdAt])
+  @@index([noMatchConfirmedById])
 }
 
 model OverlapMatch {
@@ -349,6 +401,7 @@ model OverlapMatch {
   changedRules      Json
   conflicts         Json
   evidence          Json
+  observabilityTraces Json?
   createdAt         DateTime              @default(now())
   run               OverlapRun            @relation(fields: [runId], references: [id], onDelete: Cascade)
   existingVersion   IomVersion            @relation("OverlapExisting", fields: [existingVersionId], references: [id])
@@ -361,10 +414,15 @@ model OverlapDecision {
   id           String       @id @default(uuid()) @db.Uuid
   matchId      String       @unique @db.Uuid
   decidedById  String       @db.Uuid
-  decision     String
-  note         String?
+  status       OverlapDecisionStatus
+  outcome      OverlapDecisionOutcome?
+  rationale    String?
+  topicScope   Json?
   createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
   match        OverlapMatch @relation(fields: [matchId], references: [id])
+  decidedBy    User         @relation("OverlapDecisionDecider", fields: [decidedById], references: [id])
+  relation     IomRelation?
 }
 
 model AuditEvent {
