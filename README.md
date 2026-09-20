@@ -142,7 +142,7 @@ Data berikut dibaca langsung dari Langfuse Public API setelah seluruh skenario d
 
 `pnpm eval:observability` mencetak trace probe confidentiality dan chat pada run ini; probe overlap
 tidak menghasilkan trace sehingga perintah keluar dengan status 1
-([log](docs/evidence/eval-observability.log)). Selain itu, publishing **score** dari
+([log](docs/evidence/eval-observability.txt)). Selain itu, publishing **score** dari
 `@anvia/langfuse` 1.2.0 ditolak Langfuse Cloud saat ini (`POST /api/public/scores` mengharapkan objek
 tunggal, klien mengirim array), jadi skor evaluasi dilaporkan melalui output `pnpm eval:all` dan
 `docs/evidence`, bukan di UI Langfuse. Trace dan span tetap lengkap dan dapat ditelusuri.
@@ -171,8 +171,8 @@ mengarah ke keputusan HR dan tidak mengarang relasi. Invariant keamanan determin
 oleh `pnpm test` (`quality-gates.test.ts`): release guard, citation authorization, overlap
 confidence rendah/konflik tanpa provenance → `MANUAL_REVIEW`, dan publish-readiness.
 
-Log mentah dan ringkasan: [`eval-all.log`](docs/evidence/eval-all.log),
-[`eval-overlap-rerun.log`](docs/evidence/eval-overlap-rerun.log),
+Log mentah dan ringkasan: [`eval-all.txt`](docs/evidence/eval-all.txt),
+[`eval-overlap-rerun.txt`](docs/evidence/eval-overlap-rerun.txt),
 [`eval-summary.json`](docs/evidence/eval-summary.json).
 
 ## Penyimpanan berkas (Cloudflare R2)
