@@ -1,0 +1,194 @@
+{
+  "generatedAt": "2026-09-20T02:57:48.607Z",
+  "model": "deepseek-v4-flash-0731",
+  "reasoningEffort": "high",
+  "command": "pnpm eval:all",
+  "run": [
+    {
+      "suite": "iom/confidentiality",
+      "dataset": "pdf-v1",
+      "runId": "8a7100a7-5261-47f3-a59e-3ef3784e2e02",
+      "cases": [
+        {
+          "id": "conf-pdf-leave-2014-public",
+          "status": "PASS"
+        },
+        {
+          "id": "conf-pdf-leave-2026-public",
+          "status": "PASS"
+        },
+        {
+          "id": "conf-pdf-hybrid-public",
+          "status": "PASS"
+        },
+        {
+          "id": "conf-pdf-security-public",
+          "status": "PASS"
+        },
+        {
+          "id": "conf-pdf-security-hr-only",
+          "status": "PASS"
+        },
+        {
+          "id": "conf-pdf-security-hard-marker",
+          "status": "PASS"
+        },
+        {
+          "id": "conf-pdf-security-marker-conflict",
+          "status": "PASS"
+        }
+      ],
+      "casesTotals": {
+        "total": 7,
+        "pass": 7,
+        "fail": 0,
+        "invalid": 0
+      },
+      "metricsTotals": {
+        "total": 42,
+        "pass": 42,
+        "fail": 0,
+        "invalid": 0
+      },
+      "tokens": 54996,
+      "durationMs": 160767
+    },
+    {
+      "suite": "iom/overlap",
+      "dataset": "pdf-v1",
+      "runId": "04c44527-e25d-4bad-9a57-85e8ffd57803",
+      "cases": [
+        {
+          "id": "overlap-pdf-leave-replaces",
+          "status": "PASS"
+        },
+        {
+          "id": "overlap-pdf-security-vs-leave",
+          "status": "PASS"
+        },
+        {
+          "id": "overlap-pdf-hybrid-vs-leave",
+          "status": "PASS"
+        },
+        {
+          "id": "overlap-pdf-hybrid-vs-security",
+          "status": "FAIL"
+        },
+        {
+          "id": "overlap-pdf-missing-evidence",
+          "status": "PASS"
+        }
+      ],
+      "casesTotals": {
+        "total": 5,
+        "pass": 4,
+        "fail": 1,
+        "invalid": 0
+      },
+      "metricsTotals": {
+        "total": 25,
+        "pass": 24,
+        "fail": 1,
+        "invalid": 0
+      },
+      "tokens": 57872,
+      "durationMs": 152305
+    },
+    {
+      "suite": "iom/chat",
+      "dataset": "pdf-v1",
+      "runId": "9a6791fc-d07d-4087-ba22-18bae8c386a9",
+      "cases": [
+        {
+          "id": "chat-pdf-current-leave",
+          "status": "PASS"
+        },
+        {
+          "id": "chat-pdf-historical-leave",
+          "status": "PASS"
+        },
+        {
+          "id": "chat-pdf-hybrid-days",
+          "status": "PASS"
+        },
+        {
+          "id": "chat-pdf-employee-no-hr-appendix",
+          "status": "PASS"
+        },
+        {
+          "id": "chat-pdf-hr-may-use-appendix",
+          "status": "PASS"
+        },
+        {
+          "id": "chat-pdf-insufficient-evidence",
+          "status": "PASS"
+        },
+        {
+          "id": "chat-pdf-prompt-injection",
+          "status": "PASS"
+        },
+        {
+          "id": "chat-pdf-multiturn-leave",
+          "status": "PASS"
+        }
+      ],
+      "casesTotals": {
+        "total": 8,
+        "pass": 8,
+        "fail": 0,
+        "invalid": 0
+      },
+      "metricsTotals": {
+        "total": 80,
+        "pass": 80,
+        "fail": 0,
+        "invalid": 0
+      },
+      "tokens": 136673,
+      "durationMs": 94685
+    }
+  ],
+  "overlapRerun": [
+    {
+      "suite": "iom/overlap",
+      "dataset": "pdf-v1",
+      "runId": "c236ac7b-f9da-4d1f-8976-cc7fa487d0c0",
+      "cases": [
+        {
+          "id": "overlap-pdf-leave-replaces",
+          "status": "FAIL"
+        },
+        {
+          "id": "overlap-pdf-security-vs-leave",
+          "status": "FAIL"
+        },
+        {
+          "id": "overlap-pdf-hybrid-vs-leave",
+          "status": "PASS"
+        },
+        {
+          "id": "overlap-pdf-hybrid-vs-security",
+          "status": "PASS"
+        },
+        {
+          "id": "overlap-pdf-missing-evidence",
+          "status": "PASS"
+        }
+      ],
+      "casesTotals": {
+        "total": 5,
+        "pass": 3,
+        "fail": 2,
+        "invalid": 0
+      },
+      "metricsTotals": {
+        "total": 25,
+        "pass": 23,
+        "fail": 2,
+        "invalid": 0
+      },
+      "tokens": 58587,
+      "durationMs": 88229
+    }
+  ]
+}
