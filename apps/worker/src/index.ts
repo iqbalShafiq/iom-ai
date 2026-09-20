@@ -9,7 +9,7 @@ import {
 } from "@iom/agents";
 import { parseServerConfig } from "@iom/config";
 import { createDatabase } from "@iom/database";
-import { LocalFileStorage } from "@iom/documents";
+import { createFileStorage } from "@iom/documents";
 import { confidentialityTrace, observabilityFromServerConfig } from "@iom/observability";
 import {
   createIndexVersionHandler,
@@ -28,7 +28,7 @@ const config = {
   MODEL_CACHE_ROOT: resolve(workspaceRoot, parsedConfig.MODEL_CACHE_ROOT),
 };
 const database = createDatabase(config.DATABASE_URL);
-const storage = new LocalFileStorage(config.STORAGE_ROOT);
+const storage = createFileStorage(config);
 const openai = createIomOpenAIClient({
   apiKey: config.OPENAI_API_KEY,
   ...(config.OPENAI_BASE_URL === undefined ? {} : { baseUrl: config.OPENAI_BASE_URL }),

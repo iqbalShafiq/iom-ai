@@ -11,7 +11,13 @@ const config = {
   COOKIE_SECRET: "test-cookie-secret-at-least-32-characters",
   API_PORT: 3001,
   PLATFORM_ORIGIN: "http://localhost:5173",
+  STORAGE_DRIVER: "local",
   STORAGE_ROOT: "./storage-test",
+  R2_ACCOUNT_ID: undefined,
+  R2_ACCESS_KEY_ID: undefined,
+  R2_SECRET_ACCESS_KEY: undefined,
+  R2_BUCKET_NAME: undefined,
+  R2_ENDPOINT: undefined,
   MODEL_CACHE_ROOT: "./models-test",
   WORKER_CONCURRENCY: 1,
   JOB_LEASE_SECONDS: 60,
@@ -28,8 +34,8 @@ const config = {
   LANGFUSE_CAPTURE_MODE: "full",
   LANGFUSE_CAPTURE_MAX_BYTES: 65_536,
   OBSERVABILITY_ID_SECRET: undefined,
-  CLASSIFIER_MODEL_ID: "gpt-5.6-luna",
-  OVERLAP_MODEL_ID: "gpt-5.6-luna",
+  CLASSIFIER_MODEL_ID: "deepseek-v4-flash-0731",
+  OVERLAP_MODEL_ID: "deepseek-v4-flash-0731",
 } as const;
 
 describe("API boundary", () => {

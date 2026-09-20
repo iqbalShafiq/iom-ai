@@ -29,10 +29,10 @@ describe("server configuration", () => {
     expect(parseServerConfig({ ...required, ANVIA_LENS_URL: "" }).ANVIA_LENS_URL).toBeUndefined();
   });
 
-  it("locks document AI workloads to the approved GPT-5.6 Luna model", () => {
+  it("locks document AI workloads to the approved DeepSeek model", () => {
     const config = parseServerConfig(required);
-    expect(config.CLASSIFIER_MODEL_ID).toBe("gpt-5.6-luna");
-    expect(config.OVERLAP_MODEL_ID).toBe("gpt-5.6-luna");
+    expect(config.CLASSIFIER_MODEL_ID).toBe("deepseek-v4-flash-0731");
+    expect(config.OVERLAP_MODEL_ID).toBe("deepseek-v4-flash-0731");
     expect(
       parseServerConfig({
         ...required,
@@ -40,9 +40,60 @@ describe("server configuration", () => {
         OVERLAP_MODEL_ID: "gpt-6-astra",
       }),
     ).toMatchObject({
-      CLASSIFIER_MODEL_ID: "gpt-5.6-luna",
-      OVERLAP_MODEL_ID: "gpt-5.6-luna",
+      CLASSIFIER_MODEL_ID: "deepseek-v4-flash-0731",
+      OVERLAP_MODEL_ID: "deepseek-v4-flash-0731",
     });
+  });
+
+  it("defaults document storage to local disk", () => {
+    const config = parseServerConfig(required);
+    expect(config.STORAGE_DRIVER).toBe("local");
+    expect(config.R2_BUCKET_NAME).toBeUndefined();
+  });
+
+  it("accepts R2 storage with an account id and credentials", () => {
+    const config = parseServerConfig({
+      ...required,
+      STORAGE_DRIVER: "r2",
+      R2_ACCOUNT_ID: "account-id",
+      R2_ACCESS_KEY_ID: "access-key",
+      R2_SECRET_ACCESS_KEY: "secret-key",
+      R2_BUCKET_NAME: "iom-ai",
+    });
+    expect(config.STORAGE_DRIVER).toBe("r2");
+    expect(config.R2_BUCKET_NAME).toBe("iom-ai");
+    expect(config.R2_ENDPOINT).toBeUndefined();
+  });
+
+  it("accepts R2 storage with an explicit endpoint instead of an account id", () => {
+    expect(
+      parseServerConfig({
+        ...required,
+        STORAGE_DRIVER: "r2",
+        R2_ACCESS_KEY_ID: "access-key",
+        R2_SECRET_ACCESS_KEY: "secret-key",
+        R2_BUCKET_NAME: "iom-ai",
+        R2_ENDPOINT: "https://account-id.r2.cloudflarestorage.com",
+      }).R2_ENDPOINT,
+    ).toBe("https://account-id.r2.cloudflarestorage.com");
+  });
+
+  it("rejects R2 storage without credentials", () => {
+    expect(() =>
+      parseServerConfig({ ...required, STORAGE_DRIVER: "r2", R2_BUCKET_NAME: "iom-ai" }),
+    ).toThrow(/R2_ACCESS_KEY_ID/);
+  });
+
+  it("rejects R2 storage without an account id or endpoint", () => {
+    expect(() =>
+      parseServerConfig({
+        ...required,
+        STORAGE_DRIVER: "r2",
+        R2_ACCESS_KEY_ID: "access-key",
+        R2_SECRET_ACCESS_KEY: "secret-key",
+        R2_BUCKET_NAME: "iom-ai",
+      }),
+    ).toThrow(/R2_ACCOUNT_ID or R2_ENDPOINT/);
   });
 
   it("allows Langfuse to stay disabled without credentials", () => {

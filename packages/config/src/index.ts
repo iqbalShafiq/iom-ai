@@ -11,6 +11,11 @@ const optionalSecret = z
   .optional()
   .transform((value) => (value && value.trim().length > 0 ? value : undefined));
 
+const optionalText = z
+  .string()
+  .optional()
+  .transform((value) => (value && value.trim().length > 0 ? value.trim() : undefined));
+
 const serverSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -22,7 +27,13 @@ const serverSchema = z
     COOKIE_SECRET: z.string().min(32),
     API_PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
     PLATFORM_ORIGIN: z.url(),
+    STORAGE_DRIVER: z.enum(["local", "r2"]).default("local"),
     STORAGE_ROOT: z.string().min(1).default("./storage"),
+    R2_ACCOUNT_ID: optionalText,
+    R2_ACCESS_KEY_ID: optionalSecret,
+    R2_SECRET_ACCESS_KEY: optionalSecret,
+    R2_BUCKET_NAME: optionalText,
+    R2_ENDPOINT: optionalUrl,
     MODEL_CACHE_ROOT: z.string().min(1).default("./models"),
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(3),
     JOB_LEASE_SECONDS: z.coerce.number().int().min(15).max(600).default(60),
@@ -54,6 +65,36 @@ const serverSchema = z
         code: "custom",
         message: "LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY must both be set or both omitted.",
       });
+    }
+    if (value.STORAGE_DRIVER === "r2") {
+      if (!value.R2_BUCKET_NAME) {
+        context.addIssue({
+          code: "custom",
+          path: ["R2_BUCKET_NAME"],
+          message: "R2_BUCKET_NAME is required when STORAGE_DRIVER=r2.",
+        });
+      }
+      if (!value.R2_ACCESS_KEY_ID) {
+        context.addIssue({
+          code: "custom",
+          path: ["R2_ACCESS_KEY_ID"],
+          message: "R2_ACCESS_KEY_ID is required when STORAGE_DRIVER=r2.",
+        });
+      }
+      if (!value.R2_SECRET_ACCESS_KEY) {
+        context.addIssue({
+          code: "custom",
+          path: ["R2_SECRET_ACCESS_KEY"],
+          message: "R2_SECRET_ACCESS_KEY is required when STORAGE_DRIVER=r2.",
+        });
+      }
+      if (!value.R2_ACCOUNT_ID && !value.R2_ENDPOINT) {
+        context.addIssue({
+          code: "custom",
+          path: ["R2_ACCOUNT_ID"],
+          message: "R2_ACCOUNT_ID or R2_ENDPOINT is required when STORAGE_DRIVER=r2.",
+        });
+      }
     }
     if (!value.LANGFUSE_ENABLED) return;
     if (!value.LANGFUSE_PUBLIC_KEY) {

@@ -15,6 +15,9 @@
 - Kandidat semantic overlap diotorisasi ulang ke PostgreSQL sebelum text-nya mencapai model.
 - Reindex menghapus vector dengan chunk ID versi yang sama dari kedua collection sebelum upsert,
   sehingga perubahan `EMPLOYEE_SAFE` menjadi `HR_ONLY` tidak meninggalkan vector employee lama.
+- Kredensial penyimpanan (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) hanya dipakai proses server;
+  bucket R2 tetap privat dan tidak memakai public URL atau custom domain. Byte original selalu
+  melewati route API yang berotorisasi, dan storage key tidak pernah dikirim ke browser.
 - Halaman adalah unit provenance dan review kerahasiaan. Jika sebagian isi halaman confidential,
   seluruh halaman tetap HR-only. Window embedding internal tidak pernah menjadi boundary otorisasi
   atau citation dan selalu kembali ke satu logical page ID sebelum hasil mencapai model.
@@ -36,7 +39,7 @@ Sebelum release, perlu dataset organisasi berlabel HR untuk mengukur:
 - seluruh unresolved confidentiality block publish;
 - smoke test streaming/tools/reasoning/cancellation untuk setiap model allowlisted.
 
-Allowlist aktif hanya `gpt-5.6-luna` dengan reasoning `high` untuk candidate dan judge.
+Allowlist aktif hanya `deepseek-v4-flash-0731` dengan reasoning `high` untuk candidate dan judge.
 Capability smoke test protected harus mencakup structured confidentiality, structured overlap
 dengan provenance valid, serta chat yang benar-benar memanggil retrieval; hasil stub atau mock
 tidak memenuhi release gate model-dependent.

@@ -21,7 +21,7 @@ dan platform sebagai tiga process/service terpisah di production.
 
 `pnpm user:create` memakai kebijakan password yang sama dengan login: panjang 8–256 karakter.
 
-Runtime mengunci classifier, overlap, chat, dan evaluation ke `gpt-5.6-luna` di konfigurasi
+Runtime mengunci classifier, overlap, chat, dan evaluation ke `deepseek-v4-flash-0731` di konfigurasi
 aplikasi; nilai model lama di environment diabaikan agar tidak dapat mengubah model production.
 Katalog chat juga hanya menyediakan model tersebut. Seluruh workload memakai reasoning `high` dan
 tidak mempunyai fallback stub.
@@ -72,6 +72,20 @@ Jangan mengaktifkan draft secara langsung. Jalankan impact analysis, selesaikan 
 `NEEDS_REVIEW`, lalu aktifkan. Aktivasi memperbarui visibility/public text dan policy generation
 dalam transaksi yang sama, kemudian mengantrikan reindex untuk version published. Selama reindex,
 reauthorization PostgreSQL menolak vector generation lama.
+
+## Penyimpanan berkas
+
+`STORAGE_DRIVER` memilih tempat original disimpan: `local` (default) menulis ke `STORAGE_ROOT`,
+`r2` menyimpan ke bucket Cloudflare R2 lewat API S3-compatible. Untuk `r2`, startup gagal bila
+`R2_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, atau `R2_SECRET_ACCESS_KEY` kosong, atau bila `R2_ACCOUNT_ID`
+dan `R2_ENDPOINT` keduanya kosong. Bucket tetap privat: setiap byte dibaca lewat API dengan
+otorisasi yang sama seperti sebelumnya (preview PDF hanya untuk HR), dan kredensial hanya hidup di
+proses server.
+
+Mengganti driver tidak memindahkan objek yang sudah ada, karena key tersimpan di PostgreSQL dan
+harus ada di driver yang aktif. Pindah dari `local` ke `r2` berarti menyalin seluruh isi
+`STORAGE_ROOT` ke bucket dengan key yang sama sebelum restart API dan worker; arah sebaliknya
+serupa. Uji satu unduhan dokumen dari UI sebelum mematikan driver lama.
 
 ## Backup dan restore
 

@@ -15,8 +15,8 @@ function canParseJsonValue(text: string): boolean {
 }
 
 /**
- * Luna on the Responses API streams tool calls and reasoning in a shape that
- * Anvia 1.1 rejects:
+ * OpenAI reasoning models on the Responses API stream tool calls and reasoning
+ * in a shape that Anvia 1.1 rejects:
  *
  * - The final `response.completed` payload repeats the reasoning items with an
  *   extra `encrypted_content` part the stream accumulator never saw, and

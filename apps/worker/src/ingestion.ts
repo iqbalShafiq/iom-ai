@@ -55,11 +55,17 @@ export function createIngestionHandler(
       where: { id: uploaded.id },
       data: { stage: "EXTRACTING", progress: 50, safeError: null, errorCode: null },
     });
-    const parsed = await parseDocument(
-      storage.absolutePath(uploaded.storageKey),
-      { mimeType: uploaded.mimeType },
-      ocrLanguages,
-    );
+    const materialized = await storage.materialize(uploaded.storageKey);
+    let parsed: Awaited<ReturnType<typeof parseDocument>>;
+    try {
+      parsed = await parseDocument(
+        materialized.path,
+        { mimeType: uploaded.mimeType },
+        ocrLanguages,
+      );
+    } finally {
+      await materialized.release();
+    }
     if (signal.aborted) throw new JobProcessingError("WORKER_SHUTDOWN", true);
     const textCharacters = parsed.pages.reduce((total, page) => total + page.text.length, 0);
     if (textCharacters > MAX_NORMALIZED_DOCUMENT_CHARACTERS) {

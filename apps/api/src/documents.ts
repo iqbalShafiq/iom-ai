@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
 import { basename } from "node:path";
 import { Readable } from "node:stream";
 import { createEventStreamResponse } from "@anvia/server";
@@ -10,7 +9,7 @@ import { assertIomTransition } from "@iom/database/iom";
 import { enqueueJob } from "@iom/database/jobs";
 import { getPublishReadiness, refreshIomPublishReadiness } from "@iom/database/readiness";
 import {
-  LocalFileStorage,
+  createFileStorage,
   MAX_BATCH_FILES,
   relevantAnnotations,
   validateDocumentFile,
@@ -111,8 +110,15 @@ const versionMetadataSchema = z.object({
   previousVersionId: z.string().uuid().optional(),
 });
 
+function isMissingObjectError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const name = "name" in error ? String(error.name) : "";
+  const code = "code" in error ? String(error.code) : "";
+  return code === "ENOENT" || name === "NoSuchKey" || name === "NotFound";
+}
+
 export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerConfig) {
-  const storage = new LocalFileStorage(config.STORAGE_ROOT);
+  const storage = createFileStorage(config);
   app.use("/uploads/*", authMiddleware(), requireHr());
   app.use("/iom/*", authMiddleware());
   app.use("/confidentiality/*", authMiddleware(), requireHr());
@@ -735,10 +741,16 @@ export function registerDocumentRoutes(app: Hono<AppBindings>, config: ServerCon
       include: { uploadedFile: true },
     });
     if (!version?.uploadedFile) return context.json({ error: "File tidak ditemukan." }, 404);
-    const stream = Readable.toWeb(
-      createReadStream(storage.absolutePath(version.uploadedFile.storageKey)),
-    ) as ReadableStream;
-    return new Response(stream, {
+    let stream: Readable;
+    try {
+      stream = await storage.read(version.uploadedFile.storageKey);
+    } catch (error) {
+      // A missing object is a normal 404 on both drivers; anything else
+      // (credentials, network) must keep surfacing as a server error.
+      if (!isMissingObjectError(error)) throw error;
+      return context.json({ error: "File tidak ditemukan." }, 404);
+    }
+    return new Response(Readable.toWeb(stream) as ReadableStream, {
       headers: {
         "Content-Type": version.uploadedFile.mimeType,
         "Content-Disposition": "inline",

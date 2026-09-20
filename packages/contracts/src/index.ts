@@ -59,7 +59,7 @@ export const modelOptionSchema = z.object({
 });
 export type ModelOption = z.infer<typeof modelOptionSchema>;
 
-export const DEFAULT_RUNTIME_MODEL_ID = "gpt-5.6-luna";
+export const DEFAULT_RUNTIME_MODEL_ID = "deepseek-v4-flash-0731";
 export const DEFAULT_REASONING_EFFORT = "high" as const satisfies ReasoningEffort;
 
 export const observabilityTraceRefSchema = z.object({

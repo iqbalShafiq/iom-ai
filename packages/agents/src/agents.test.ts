@@ -1,5 +1,6 @@
 import { AgentStructuredOutputError } from "@anvia/core/agent";
 import { OpenAIClient } from "@anvia/openai";
+import type { ModelOption } from "@iom/contracts";
 import { describe, expect, it } from "vitest";
 import {
   agentReasoningEfforts,
@@ -19,6 +20,19 @@ import {
   reciprocalRankFusion,
 } from "./overlap.js";
 import { StreamReleaseGuard } from "./stream-guard.js";
+
+const openAICatalog = [
+  {
+    id: "openai-reasoning-model",
+    label: "OpenAI Reasoning",
+    description: "Fixture untuk memverifikasi pemilihan Responses API.",
+    supportedReasoningEfforts: ["high"],
+    defaultReasoningEffort: "high",
+    supportsStreaming: true,
+    supportsTools: true,
+    supportsReasoningSummary: true,
+  },
+] as const satisfies readonly ModelOption[];
 
 describe("agent policies", () => {
   it("routes an out-of-bounds confidentiality span to HR review", async () => {
@@ -252,11 +266,11 @@ describe("agent policies", () => {
     ).rejects.toBeInstanceOf(OverlapModelTimeoutError);
   });
 
-  it("exposes only the approved GPT-5.6 Luna chat configuration", () => {
+  it("exposes only the approved DeepSeek chat configuration", () => {
     expect(modelCatalog).toEqual([
       expect.objectContaining({
-        id: "gpt-5.6-luna",
-        label: "GPT-5.6 Luna",
+        id: "deepseek-v4-flash-0731",
+        label: "DeepSeek V4 Flash 0731",
         supportedReasoningEfforts: ["high"],
         defaultReasoningEffort: "high",
       }),
@@ -268,24 +282,28 @@ describe("agent policies", () => {
     expect(() => resolveModelSelection("gpt-5.6-terra", "medium")).toThrow("MODEL_NOT_ALLOWED");
   });
 
-  it("locks GPT-5.6 Luna chat runs to high reasoning", () => {
-    expect(resolveModelSelection("gpt-5.6-luna", "high")).toEqual({
-      modelId: "gpt-5.6-luna",
+  it("locks DeepSeek chat runs to high reasoning", () => {
+    expect(resolveModelSelection("deepseek-v4-flash-0731", "high")).toEqual({
+      modelId: "deepseek-v4-flash-0731",
       reasoningEffort: "high",
     });
-    expect(() => resolveModelSelection("gpt-5.6-luna", "low")).toThrow(
+    expect(() => resolveModelSelection("deepseek-v4-flash-0731", "low")).toThrow(
       "REASONING_EFFORT_NOT_SUPPORTED",
     );
-    expect(() => resolveModelSelection("gpt-5.6-luna", "none")).toThrow(
+    expect(() => resolveModelSelection("deepseek-v4-flash-0731", "none")).toThrow(
       "REASONING_EFFORT_NOT_SUPPORTED",
     );
   });
 
-  it("uses Responses API only for the allowlisted OpenAI reasoning model", () => {
-    expect(resolveModelApi("gpt-5.6-luna")).toBe("responses");
-    expect(() => resolveModelApi("gpt-5.6-sol")).toThrow("MODEL_NOT_ALLOWED");
-    const model = createOpenAIModel(new OpenAIClient({ apiKey: "test-key" }), "gpt-5.6-luna");
-    expect(model.controls?.reasoningEffort?.defaultValue).toBe("medium");
+  it("uses Chat Completions for DeepSeek and Responses for OpenAI reasoning models", () => {
+    expect(resolveModelApi("deepseek-v4-flash-0731")).toBe("chat");
+    expect(() => resolveModelApi("gpt-5.6-luna")).toThrow("MODEL_NOT_ALLOWED");
+    expect(resolveModelApi("openai-reasoning-model", openAICatalog)).toBe("responses");
+    const model = createOpenAIModel(
+      new OpenAIClient({ apiKey: "test-key" }),
+      "deepseek-v4-flash-0731",
+    );
+    expect(model.controls?.reasoningEffort).toBeUndefined();
     expect(openaiReasoning(agentReasoningEfforts.confidentiality)).toEqual({
       controls: { reasoningEffort: "high" },
       providerOptions: { reasoning: { effort: "high", summary: "auto" } },
@@ -293,7 +311,10 @@ describe("agent policies", () => {
   });
 
   it("configures chat, confidentiality, and overlap with the same reasoning placement", () => {
-    const model = createOpenAIModel(new OpenAIClient({ apiKey: "test-key" }), "gpt-5.6-luna");
+    const model = createOpenAIModel(
+      new OpenAIClient({ apiKey: "test-key" }),
+      "deepseek-v4-flash-0731",
+    );
     const chat = createIomAgent({
       model,
       reasoningEffort: "medium",
@@ -313,15 +334,15 @@ describe("agent policies", () => {
     });
     const classifier = createConfidentialityClassifier(model);
     const overlap = createOverlapAnalyzer(model);
-    expect(chat.controls).toEqual({ reasoningEffort: "medium" });
+    expect(chat.controls).toBeUndefined();
     expect(chat.providerOptions).toEqual({
       reasoning: { effort: "medium", summary: "auto" },
     });
-    expect(classifier.controls).toEqual({ reasoningEffort: "high" });
+    expect(classifier.controls).toBeUndefined();
     expect(classifier.providerOptions).toEqual({
       reasoning: { effort: "high", summary: "auto" },
     });
-    expect(overlap.controls).toEqual({ reasoningEffort: "high" });
+    expect(overlap.controls).toBeUndefined();
     expect(overlap.providerOptions).toEqual({
       reasoning: { effort: "high", summary: "auto" },
     });
@@ -351,7 +372,7 @@ describe("agent policies", () => {
     ]);
   });
 
-  it("completes cancelled Luna function calls that already have JSON arguments", () => {
+  it("completes cancelled Responses function calls that already have JSON arguments", () => {
     expect(coerceOpenAIResponsesEvent({ type: "response.function_call_arguments.done" })).toBe(
       undefined,
     );

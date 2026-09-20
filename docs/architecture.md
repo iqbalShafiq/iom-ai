@@ -14,7 +14,10 @@ internal model payload.
 ## Alur dokumen
 
 1. API memvalidasi signature/ukuran, menyimpan original melalui `FileStorage`, lalu membuat record dan
-   job secara transaksional. Original dibersihkan bila transaksi gagal.
+   job secara transaksional. Original dibersihkan bila transaksi gagal. Driver penyimpanan dipilih
+   lewat `STORAGE_DRIVER`: `local` menulis ke `STORAGE_ROOT`, `r2` memakai API S3-compatible
+   Cloudflare R2. Keduanya berada di balik abstraksi yang sama, sehingga parser dan preview HR
+   membaca objek melalui `materialize()`/`read()` tanpa mengetahui lokasi fisiknya.
 2. Batch membawa jumlah file yang diharapkan dan ditutup (`sealed`) setelah transfer selesai, sehingga
    stream progress dapat berakhir dengan benar termasuk ketika seluruh file ditolak.
 3. Durable job mengekstrak PDF/DOCX/Markdown/TXT; halaman tanpa text layer memakai OCR lokal.
@@ -42,7 +45,7 @@ membuat conversation beserta request message secara atomik. Draft yang ditutup t
 meninggalkan session kosong; setelah commit, response memberi session ID agar browser mengganti URL
 secara in-place tanpa remount stream. Migration cleanup juga menghapus row legacy tanpa message.
 
-Allowlist runtime saat ini hanya berisi `gpt-5.6-luna` (GPT-5.6 Luna) dengan
+Allowlist runtime saat ini hanya berisi `deepseek-v4-flash-0731` (DeepSeek V4 Flash 0731) dengan
 reasoning `high` untuk chat, confidentiality, overlap, dan evaluation; tidak ada fallback model
 atau stub pada jalur production. Observability memakai `@anvia/langfuse` melalui
 `packages/observability`; Lens tetap nonaktif agar tidak menghasilkan trace ganda. Scoped

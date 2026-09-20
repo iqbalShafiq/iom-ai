@@ -18,7 +18,7 @@ export type IomOpenAIModel = OpenAICompletionModel<OpenAIReasoningControls>;
 export const modelCatalog = [
   {
     id: defaultOpenAIModelId,
-    label: "GPT-5.6 Luna",
+    label: "DeepSeek V4 Flash 0731",
     description: "Model runtime untuk chat, klasifikasi kerahasiaan, overlap, dan evaluasi.",
     supportedReasoningEfforts: [DEFAULT_REASONING_EFFORT],
     defaultReasoningEffort: DEFAULT_REASONING_EFFORT,
@@ -46,9 +46,9 @@ export function resolveModelSelection(
 export function resolveModelApi(
   modelId: string,
   catalog: readonly ModelOption[] = modelCatalog,
-): "responses" {
+): "chat" | "responses" {
   if (!catalog.some((option) => option.id === modelId)) throw new Error("MODEL_NOT_ALLOWED");
-  return "responses";
+  return modelId.startsWith("deepseek") ? "chat" : "responses";
 }
 
 export function openaiReasoning(reasoningEffort: ReasoningEffort) {
